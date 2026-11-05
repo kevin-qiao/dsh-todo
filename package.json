@@ -1,0 +1,40 @@
+{
+  "name": "@local/dsh-sticker-todo",
+  "version": "1.5.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Bilingual (中文 / English) sticker-style personal TODO panel in the DSH Web sidebar: sticky-board and minimal-list views, a note composer dialog, quick due dates, timed reminders, font choices, tag grouping, pick-or-type AI note advice, motion and a polished board.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib/store.js",
+    "lib/ai.js",
+    "lib/tools.js",
+    "cordis.patch.yml",
+    "locale/en.json",
+    "locale/zh.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  }
+}

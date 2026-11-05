@@ -1,0 +1,15 @@
+# dependencies (the plugin itself has none)
+node_modules/
+
+# local scratch / development artifacts
+.tmp/
+*.log
+
+# editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# a board file accidentally placed inside the repo
+todos.json

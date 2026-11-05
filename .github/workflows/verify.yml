@@ -1,0 +1,35 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-checks:
+    name: offline checks (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Bundle / manifest / syntax checks
+        run: node verify/check-static.mjs
+
+      - name: Offline Host integration (real apply() + scripted model)
+        run: node verify/host-actions.mjs
+
+      - name: Client render smoke (shimmed React)
+        run: node verify/client-render.mjs
+
+      # verify/api-smoke.mjs talks to a live DSH Web GUI and is intentionally not run here.
