@@ -17,6 +17,12 @@ All notable changes to this plugin are documented here. The format follows
 - README split into two files: [`README.md`](./README.md) (English, repository default) and
   [`README.zh-CN.md`](./README.zh-CN.md) (中文), with language links at the top of each.
 
+### Docs
+- Market submission filed at
+  [dshplugin/dsh-plugin-hub#649](https://github.com/dshplugin/dsh-plugin-hub/issues/649).
+- AI co-author trailer convention documented in [`HANDOFF.md`](./HANDOFF.md); commits created by the
+  AI assistant carry `Co-authored-by: DeepSeek Harness (deepseek-flash) <noreply@deepseek.com>`.
+
 ## [1.5.0] — 2026-11-05
 
 ### Added

@@ -16,6 +16,21 @@
 - DSH 内置的「插件中心」只展示可 `dsh plugin --profile web add <npm 包名>` 一键安装的插件；
   当前包名 `@local/dsh-sticker-todo` 不可发布，如需上插件中心要改名（如 `dsh-sticker-todo`）、
   同步 `cordis.patch.yml` 的 name 与 profile 依赖后重新安装，并在 npm 发布。
+- 本仓库的市场提交 Issue：[dshplugin/dsh-plugin-hub#649](https://github.com/dshplugin/dsh-plugin-hub/issues/649)
+  （已于 2026-11-06 提交，等待审核收录）。
+
+## AI 协作与署名
+
+本项目的代码、文档与市场提交流程由作者 Kevin 与 AI 助手共同完成。约定：
+
+- 由 AI 助手创建的提交，在 commit message 末尾保留 co-author trailer：
+
+  ```
+  Co-authored-by: DeepSeek Harness (deepseek-flash) <noreply@deepseek.com>
+  ```
+
+- 对外提交（如 dsh-plugin.org 的市场收录 Issue）同样附上该署名。
+- 变更历史里已经存在的旧提交不重写（会触发强推/改写公开历史），署名从约定生效后的提交开始。
 
 ## 安装状态（开发机上）
 
