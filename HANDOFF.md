@@ -1,23 +1,37 @@
 # 便利贴待办 · Sticker TODO — 维护者交接
 
-本仓库就是插件包 `@local/dsh-sticker-todo` 的根目录。
-当前版本 **1.5.0**（v1.5.0：便利贴 / 极简列表双视图；v1.4.0：面板内中英双语切换）。
+本仓库就是插件包 **`dsh-sticker-todo`** 的根目录（v1.6.0 起从 `@local/dsh-sticker-todo` 改名并发布到
+npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前版本 **1.6.0**。
+
+## 发布到 npm
+
+- npm 包名：`dsh-sticker-todo`（unscoped，首次发布 1.6.0）；`package.json` 已去掉 `private`，
+  保留 `publishConfig.access: public`；`files` 只打包运行所需文件（README 两份 + LICENSE 由 npm 自动带上）。
+- 首发命令（在仓库根目录，需要先登录 npm）：
+
+  ```bash
+  npm login
+  npm whoami                 # 确认账号
+  npm pack --dry-run         # 最后检查 tarball 内容（约 13 个文件）
+  npm publish                # 发布 1.6.0
+  npm view dsh-sticker-todo  # 确认已上架
+  ```
+
+  如果账号开了 2FA，`npm publish` 会要一次性验证码。
+- 发布后请：把市场 Issue #649 的安装命令改成 `dsh plugin --profile web add dsh-sticker-todo`
+  （或在新评论里补充）；在 README 加市场 `listed.svg` 徽章；按需打 `v1.6.0` tag + GitHub Release。
+- DSH 内置「插件中心」只展示 npm 可一键安装的插件，所以发布后即可被检索到。
 
 ## README 与插件市场
 
 - 文档分两个文件：`README.md`（英文，仓库默认展示）与 `README.zh-CN.md`（中文），顶部互相链接；
-  截图放在 `docs/`（示例数据）。
+  截图放在 `docs/`（示例数据，README 用绝对地址引用以便 npm 页面显示）。
 - 已按 [dsh-plugin.org 收录要求](https://dsh-plugin.org/zh/submit) 准备：公开仓库、GitHub topic
-  `dsh-plugin`、根目录 `package.json`、插件导出 `apply(ctx)`、README 里有可复制的安装命令：
-  `dsh plugin --profile web add github:kevin-qiao/dsh-todo`。
-- 提交方式：在 [dshplugin/dsh-plugin-hub](https://github.com/dshplugin/dsh-plugin-hub/issues/new)
-  用市场给的表单开一个 Issue（标题 `[插件提交] kevin-qiao/dsh-todo — <一句话价值>`）。审核收录后，
-  把市场提供的 `listed.svg` 徽章加到 README（把链接里的 owner/slug 换成详情页地址）。
-- DSH 内置的「插件中心」只展示可 `dsh plugin --profile web add <npm 包名>` 一键安装的插件；
-  当前包名 `@local/dsh-sticker-todo` 不可发布，如需上插件中心要改名（如 `dsh-sticker-todo`）、
-  同步 `cordis.patch.yml` 的 name 与 profile 依赖后重新安装，并在 npm 发布。
+  `dsh-plugin`、根目录 `package.json`、插件导出 `apply(ctx)`、README 里有可复制的安装命令
+  `dsh plugin --profile web add dsh-sticker-todo`（源码安装为 `github:kevin-qiao/dsh-todo`）。
 - 本仓库的市场提交 Issue：[dshplugin/dsh-plugin-hub#649](https://github.com/dshplugin/dsh-plugin-hub/issues/649)
-  （已于 2026-11-06 提交，等待审核收录）。
+  （已于 2026-11-06 提交，等待审核收录；npm 发布后可编辑补上 npm 安装命令）。
+- 审核收录后，把市场提供的 `listed.svg` 徽章加到两份 README（把链接里的 owner/slug 换成详情页地址）。
 
 ## AI 协作与署名
 
@@ -34,8 +48,8 @@
 
 ## 安装状态（开发机上）
 
-- Profile：`desktop`（`~/.dsh/profiles/desktop`），依赖为 `link:<本仓库目录>`，
-  `dsh.profile.bundles` 里包含 `@local/dsh-sticker-todo`
+- Profile：`desktop`（`~/.dsh/profiles/desktop`），依赖为 `"dsh-sticker-todo": "link:<本仓库目录>"`，
+  `dsh.profile.bundles` 里包含 `dsh-sticker-todo`（改名后已同步；重启 DSH 生效）
 - 安装结果：`application: applied`，无警告
 - 插件行 id：`sticker-todo`；面板 id / 侧栏 id：`sticker-todo`；前端 locale 命名空间：`stickerTodo`
 - 数据文件：`~/.dsh-sticker-todo/todos.json`（可用行内 config `dataFile` 改）
@@ -49,12 +63,12 @@
 | `lib/ai.js` | 模型排程、标签分类、单条便签建议（含可选项）+ 本地确定性兜底 |
 | `lib/tools.js` | 模型可见的 `sticker_todo` 工具（含 `tag`/`advice` 动作） |
 | `client.js` | 浏览器半边：侧栏图标、新建/编辑弹窗、便签画板、分组/筛选、字体、语言切换、AI 建议、动效 |
-| `cordis.patch.yml` | 插入 `sticker-todo` 行的 bundle patch |
+| `cordis.patch.yml` | 插入 `sticker-todo` 行的 bundle patch（name = `dsh-sticker-todo`） |
 | `locale/en.json`, `locale/zh.json` | 插件管理里的标题与描述（中英双语） |
 | `icon.svg` | 插件图标（原始绘制） |
 | `verify/` | 离线清单 / 离线 Host 集成 / 客户端渲染冒烟 / 线上 HTTP 冒烟 |
 | `CONTRACT.md` | Host/Client 之间的 API 契约（改造时先看这个） |
-| `README.md` | 中英双语、GitHub 风格的项目说明 |
+| `README.md` / `README.zh-CN.md` | 英文 / 中文项目说明（GitHub 风格，互链） |
 
 ## 架构要点
 

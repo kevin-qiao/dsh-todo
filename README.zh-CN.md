@@ -5,28 +5,29 @@
 DeepSeek Harness Web GUI 里的一块**中英双语便利贴待办板** —— 随手贴、AI 帮忙整理。
 A **bilingual sticky-note todo board** for the DeepSeek Harness Web GUI.
 
-![version](https://img.shields.io/badge/version-1.5.0-4d6bfe)
+![version](https://img.shields.io/badge/version-1.6.0-4d6bfe)
+[![npm](https://img.shields.io/npm/v/dsh-sticker-todo)](https://www.npmjs.com/package/dsh-sticker-todo)
 ![DSH](https://img.shields.io/badge/DSH-Web%20GUI-0b7285)
 ![i18n](https://img.shields.io/badge/i18n-zh%20%7C%20en-2f9e44)
 ![node](https://img.shields.io/badge/node-%E2%89%A518-339933)
 ![license](https://img.shields.io/badge/license-MIT-2f9e44)
 [![verify](https://github.com/kevin-qiao/dsh-todo/actions/workflows/verify.yml/badge.svg)](https://github.com/kevin-qiao/dsh-todo/actions/workflows/verify.yml)
 
-[English](README.md) · **中文**
+[English](https://github.com/kevin-qiao/dsh-todo/blob/main/README.md) · **中文**
 
 ## 预览
 
 | 便利贴视图 | 极简列表（点行展开） |
 |---|---|
-| ![便利贴视图](docs/preview-board.png) | ![极简列表](docs/preview-minimal-list.png) |
+| ![便利贴视图](https://raw.githubusercontent.com/kevin-qiao/dsh-todo/main/docs/preview-board.png) | ![极简列表](https://raw.githubusercontent.com/kevin-qiao/dsh-todo/main/docs/preview-minimal-list.png) |
 
-![新建便签弹窗](docs/preview-composer.png)
+![新建便签弹窗](https://raw.githubusercontent.com/kevin-qiao/dsh-todo/main/docs/preview-composer.png)
 
 > 截图为示例数据；界面支持中英双语，可通过面板头部按钮切换。
 
 ## 简介
 
-`@local/dsh-sticker-todo` 是一个 DeepSeek Harness（DSH）Web 插件：在左侧栏加一个「便利贴待办」入口，
+`dsh-sticker-todo` 是一个 DeepSeek Harness（DSH）Web 插件：在左侧栏加一个「便利贴待办」入口，
 点开后是一面纸质背景的便利贴墙。每张便签有标题、详情、颜色、优先级、截止日期、定时提醒和标签；
 AI 可以帮你安排日程、按主题分类打标签，也能对**单条便签**给建议——信息不够时会先问你几个选择题。
 面板、HTTP 路由和 agent 工具共用同一份 Host 实现，聊天里改的和面板里看到的永远一致。
@@ -67,32 +68,35 @@ AI 可以帮你安排日程、按主题分类打标签，也能对**单条便签
 
 ## 安装
 
-插件是标准的 DSH bundle（`package.json` 带 `dsh.bundle.patch` / `dsh.client`），可以直接从公开仓库安装：
+插件是标准的 DSH bundle（`package.json` 带 `dsh.bundle.patch` / `dsh.client`），已发布到 npm，包名 **`dsh-sticker-todo`**：
 
 ```bash
-dsh plugin --profile web add github:kevin-qiao/dsh-todo
+dsh plugin --profile web add dsh-sticker-todo
 ```
 
 然后**重启 DSH**（Host 侧模块只在启动时从磁盘加载），在左侧栏打开 **便利贴待办** 即可。
 
 <details>
-<summary>其它安装方式（插件管理器 / 手动 profile 依赖 / 本地克隆）</summary>
+<summary>从源码安装（GitHub / 本地克隆 / 手动 profile 依赖）</summary>
+
+```bash
+dsh plugin --profile web add github:kevin-qiao/dsh-todo
+```
+
+或克隆仓库后安装该目录：
 
 ```bash
 git clone https://github.com/kevin-qiao/dsh-todo.git
 ```
 
 1. 在 DSH 的 **插件管理** 里安装克隆出来的目录（`install_bundle`，目标 = 该目录的本地路径）；
-   或手动把 `@local/dsh-sticker-todo` 加入 `dsh.profile.bundles`，依赖写成 `link:<克隆目录>`。
+   或手动把 `dsh-sticker-todo` 加入 `dsh.profile.bundles`，依赖写成 `link:<克隆目录>`。
 2. **重启 DSH**（Host 侧模块只在启动时从磁盘加载）。
 3. 左侧栏出现「便利贴待办」入口，点开即用。
 
 之后如果只改 `client.js`：刷新页面（Ctrl+R）即可；如果改了 `index.js` / `lib/*`：重启 DSH 或重装。
 
 </details>
-
-> 本包暂未发布到 npm（`private: true`），所以从源码安装用上面的 `github:` 命令；
-> 如果以后发布了 npm 包，安装命令会变成 `dsh plugin --profile web add dsh-sticker-todo`。
 
 ## 配置
 
@@ -176,7 +180,7 @@ Browser (client.js)                      Host (index.js)
 
 只暴露一个 prefix 路由：`GET /dsh-todo/state` 与 `POST /dsh-todo/action`，动作包括
 `add` / `update` / `toggle` / `remove` / `clearCompleted` / `ackReminders` / `aiPlan` / `aiAdvice` /
-`aiClearPlan` / `aiTag` / `aiNoteAdvice`。完整字段与错误码见 [`CONTRACT.md`](./CONTRACT.md)。
+`aiClearPlan` / `aiTag` / `aiNoteAdvice`。完整字段与错误码见 [`CONTRACT.md`](https://github.com/kevin-qiao/dsh-todo/blob/main/CONTRACT.md)。
 
 ## 开发与验证
 
@@ -205,17 +209,17 @@ node verify/api-smoke.mjs http://127.0.0.1:55609   # 线上 HTTP 冒烟（端口
 
 ## 参与贡献
 
-- 开发环境、验证命令和代码约定见 [CONTRIBUTING.md](./CONTRIBUTING.md)；
-- 安全漏洞请按 [SECURITY.md](./SECURITY.md) 私密上报，不要开公开 issue；
+- 开发环境、验证命令和代码约定见 [CONTRIBUTING.md](https://github.com/kevin-qiao/dsh-todo/blob/main/CONTRIBUTING.md)；
+- 安全漏洞请按 [SECURITY.md](https://github.com/kevin-qiao/dsh-todo/blob/main/SECURITY.md) 私密上报，不要开公开 issue；
 - 使用问题、玩法分享和改进想法欢迎到 [Discussions](https://github.com/kevin-qiao/dsh-todo/discussions)
   讨论；功能与缺陷请用仓库里的 issue 模板提交；
-- 版本变更见 [CHANGELOG.md](./CHANGELOG.md)。
+- 版本变更见 [CHANGELOG.md](https://github.com/kevin-qiao/dsh-todo/blob/main/CHANGELOG.md)。
 
 ## 许可
 
-[MIT](./LICENSE) © 2026 Kevin。未发布到 npm（`package.json` 里 `private: true`，防止误发布）。
+[MIT](https://github.com/kevin-qiao/dsh-todo/blob/main/LICENSE) © 2026 Kevin。未发布到 npm（`package.json` 里 `private: true`，防止误发布）。
 图标为原创绘制；插件运行于 DeepSeek Harness，Harness 本身遵循其自身许可。
 
 ---
 
-[English README](README.md)
+[English README](https://github.com/kevin-qiao/dsh-todo/blob/main/README.md)

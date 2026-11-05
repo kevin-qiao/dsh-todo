@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * verify/check-static.mjs — static (offline) validation for the
- * `@local/dsh-sticker-todo` bundle.
+ * `dsh-sticker-todo` bundle.
  *
  * Usage:
  *   node verify/check-static.mjs            # validate the bundle that owns this script
@@ -40,7 +40,7 @@ import { fileURLToPath } from 'node:url';
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = process.argv[2] ? resolve(process.argv[2]) : resolve(SCRIPT_DIR, '..');
 
-const EXPECTED_NAME = '@local/dsh-sticker-todo';
+const EXPECTED_NAME = 'dsh-sticker-todo';
 const ICON_MAX_BYTES = 256 * 1024;
 const REQUIRED_EXPORTS = ['.', './client', './locale/*.json', './icon'];
 const TEMPLATE_LEFTOVERS = ['My ', 'Composer Decoration', 'todo here'];
@@ -275,8 +275,8 @@ function checkManifest() {
   if (typeof pkg.version === 'string' && /^\d+\.\d+\.\d+/.test(pkg.version)) pass('version', pkg.version);
   else fail('version', `expected a semver string, got ${JSON.stringify(pkg.version)}`);
 
-  if (pkg.private === true) pass('private', 'true');
-  else fail('private', `expected true, got ${JSON.stringify(pkg.private)}`);
+  if (pkg.private === true) fail('publishable', 'package.json must not be private when publishing to npm');
+  else pass('publishable', 'not private');
 
   if (pkg.type === 'module') pass('type', 'module');
   else fail('type', `expected "module", got ${JSON.stringify(pkg.type)}`);

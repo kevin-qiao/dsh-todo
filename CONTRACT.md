@@ -2,7 +2,7 @@
 
 Bundle directory: the repository root (`.`)
 
-Package name: `@local/dsh-sticker-todo`
+Package name: `dsh-sticker-todo`
 Loader row id: `sticker-todo`
 Client panel id (the `main` slot key): `sticker-todo`
 Sidebar panellist entry id: `sticker-todo`
@@ -189,7 +189,7 @@ file are read as `[]`; a persisted value that is not an array of strings is disc
 - Module format (plain JS, no JSX, no imports):
   ```js
   window.__ModuleLoader__.load({
-    id: '@local/dsh-sticker-todo',
+    id: 'dsh-sticker-todo',
     factory(require) {
       const React = require('react');
       ...

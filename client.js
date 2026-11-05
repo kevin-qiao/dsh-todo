@@ -11,7 +11,7 @@
  * Plain-JS client module: React comes from the browser module table — no JSX, no imports.
  */
 window.__ModuleLoader__.load({
-  id: '@local/dsh-sticker-todo',
+  id: 'dsh-sticker-todo',
   factory(require) {
     const React = require('react')
     const h = React.createElement

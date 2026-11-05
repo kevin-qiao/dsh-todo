@@ -5,28 +5,29 @@
 A **bilingual sticky-note todo board** for the DeepSeek Harness Web GUI.
 DeepSeek Harness Web GUI 里的一块便利贴待办板 —— 中英双语、随手贴、AI 帮忙整理。
 
-![version](https://img.shields.io/badge/version-1.5.0-4d6bfe)
+![version](https://img.shields.io/badge/version-1.6.0-4d6bfe)
+[![npm](https://img.shields.io/npm/v/dsh-sticker-todo)](https://www.npmjs.com/package/dsh-sticker-todo)
 ![DSH](https://img.shields.io/badge/DSH-Web%20GUI-0b7285)
 ![i18n](https://img.shields.io/badge/i18n-zh%20%7C%20en-2f9e44)
 ![node](https://img.shields.io/badge/node-%E2%89%A518-339933)
 ![license](https://img.shields.io/badge/license-MIT-2f9e44)
 [![verify](https://github.com/kevin-qiao/dsh-todo/actions/workflows/verify.yml/badge.svg)](https://github.com/kevin-qiao/dsh-todo/actions/workflows/verify.yml)
 
-**English** · [中文](README.zh-CN.md)
+**English** · [中文](https://github.com/kevin-qiao/dsh-todo/blob/main/README.zh-CN.md)
 
 ## Preview
 
 | Sticky board | Minimal list (click a row to expand) |
 |---|---|
-| ![Sticky board](docs/preview-board.png) | ![Minimal list](docs/preview-minimal-list.png) |
+| ![Sticky board](https://raw.githubusercontent.com/kevin-qiao/dsh-todo/main/docs/preview-board.png) | ![Minimal list](https://raw.githubusercontent.com/kevin-qiao/dsh-todo/main/docs/preview-minimal-list.png) |
 
-![Composer dialog](docs/preview-composer.png)
+![Composer dialog](https://raw.githubusercontent.com/kevin-qiao/dsh-todo/main/docs/preview-composer.png)
 
 > Screenshots use demo data; the UI is bilingual and switches from the header. · 截图为示例数据，界面支持中英双语切换。
 
 ## What it is
 
-`@local/dsh-sticker-todo` is a DeepSeek Harness (DSH) Web plugin: it adds a **便利贴待办 (Sticker TODO)**
+`dsh-sticker-todo` is a DeepSeek Harness (DSH) Web plugin: it adds a **便利贴待办 (Sticker TODO)**
 entry to the left sidebar, opening a paper-walled board of sticky notes. Each note has a title,
 details, colour, priority, deadline, timed reminder and tags; AI can plan the schedule, classify the
 board into tags, and advise on **one note at a time** — asking a few pick-or-type questions first when
@@ -75,26 +76,31 @@ chat and the panel can never disagree.
 
 ## Install
 
-The plugin is a standard DSH bundle (it ships `dsh.bundle.patch` and a `dsh.client` manifest), so it
-can be installed from this public repository:
+The plugin is a standard DSH bundle (it ships `dsh.bundle.patch` and a `dsh.client` manifest) and is
+published to npm as **`dsh-sticker-todo`**:
 
 ```bash
-dsh plugin --profile web add github:kevin-qiao/dsh-todo
+dsh plugin --profile web add dsh-sticker-todo
 ```
 
 Then **restart DSH** (the Host half is loaded from disk only at startup) and open **便利贴待办** in the
 sidebar.
 
 <details>
-<summary>Other install paths (Plugin Manager / manual profile link / from a checkout)</summary>
+<summary>Install from source instead (GitHub / local checkout / manual profile link)</summary>
+
+```bash
+dsh plugin --profile web add github:kevin-qiao/dsh-todo
+```
+
+or clone the repository and install that checkout:
 
 ```bash
 git clone https://github.com/kevin-qiao/dsh-todo.git
 ```
 
 1. Install the cloned directory from the DSH **Plugin Manager** (`install_bundle`, target = that local
-   path), or add `@local/dsh-sticker-todo` to `dsh.profile.bundles` with a `link:<clone-dir>`
-   dependency.
+   path), or add `dsh-sticker-todo` to `dsh.profile.bundles` with a `link:<clone-dir>` dependency.
 2. Restart DSH.
 3. The sidebar entry appears; open it and start writing notes.
 
@@ -102,10 +108,6 @@ After that, `client.js`-only changes need a page reload (Ctrl+R); `index.js` / `
 DSH restart or a Plugin Manager reinstall.
 
 </details>
-
-> The package is not published to npm yet (`private: true`), so the one-click plugin-center command is
-> `dsh plugin --profile web add github:kevin-qiao/dsh-todo`. If an npm package is published later, the
-> command becomes `dsh plugin --profile web add dsh-sticker-todo`.
 
 ## Configuration
 
@@ -196,7 +198,7 @@ Examples: “plan my week”, “group my todos by topic”, “mark 写周报 a
 One prefix route: `GET /dsh-todo/state` and `POST /dsh-todo/action`, with the actions
 `add` / `update` / `toggle` / `remove` / `clearCompleted` / `ackReminders` / `aiPlan` / `aiAdvice` /
 `aiClearPlan` / `aiTag` / `aiNoteAdvice`. Full shapes and error codes live in
-[`CONTRACT.md`](./CONTRACT.md).
+[`CONTRACT.md`](https://github.com/kevin-qiao/dsh-todo/blob/main/CONTRACT.md).
 
 ## Development & verification
 
@@ -229,19 +231,19 @@ all passing (`api-smoke` varies a little with the board contents; one check SKIP
 
 ## Contributing
 
-- Development setup, verification commands and code conventions: [CONTRIBUTING.md](./CONTRIBUTING.md)
-- Please report security issues privately per [SECURITY.md](./SECURITY.md), not in a public issue;
+- Development setup, verification commands and code conventions: [CONTRIBUTING.md](https://github.com/kevin-qiao/dsh-todo/blob/main/CONTRIBUTING.md)
+- Please report security issues privately per [SECURITY.md](https://github.com/kevin-qiao/dsh-todo/blob/main/SECURITY.md), not in a public issue;
 - Questions, setups and ideas are welcome in
   [Discussions](https://github.com/kevin-qiao/dsh-todo/discussions); use the issue templates for bugs
   and feature requests;
-- Version history: [CHANGELOG.md](./CHANGELOG.md).
+- Version history: [CHANGELOG.md](https://github.com/kevin-qiao/dsh-todo/blob/main/CHANGELOG.md).
 
 ## License
 
-[MIT](./LICENSE) © 2026 Kevin. Not published to npm (`private: true` in `package.json` prevents an
+[MIT](https://github.com/kevin-qiao/dsh-todo/blob/main/LICENSE) © 2026 Kevin. Not published to npm (`private: true` in `package.json` prevents an
 accidental publish). The icon is original artwork; the plugin runs inside DeepSeek Harness, which is
 licensed separately.
 
 ---
 
-[中文版说明 README.zh-CN.md](README.zh-CN.md)
+[中文版说明 README.zh-CN.md](https://github.com/kevin-qiao/dsh-todo/blob/main/README.zh-CN.md)

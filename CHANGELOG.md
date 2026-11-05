@@ -6,16 +6,23 @@ All notable changes to this plugin are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-11-06
+
+### Changed
+- **Package renamed to `dsh-sticker-todo` and published to npm** so it can be installed with one
+  command and appear in the DSH in-app plugin center:
+  `dsh plugin --profile web add dsh-sticker-todo`. The bundle row name in `cordis.patch.yml` follows
+  the package name.
+- README split into two files: [`README.md`](./README.md) (English, repository default) and
+  [`README.zh-CN.md`](./README.zh-CN.md) (中文), with language links at the top of each.
+- README cross-links and screenshots use absolute URLs, so the npm package page renders them too.
+
 ### Added
 - README preview screenshots (`docs/preview-*.png`) and a GitHub-style preview section.
 - Contributing guide, security policy and GitHub issue/PR templates.
 - CI workflow that runs the offline verification suites on Node 20/22/24.
-- dsh-plugin.org market readiness: the `dsh-plugin` GitHub topic and a copy-paste
-  `dsh plugin --profile web add github:kevin-qiao/dsh-todo` install command in both READMEs.
-
-### Changed
-- README split into two files: [`README.md`](./README.md) (English, repository default) and
-  [`README.zh-CN.md`](./README.zh-CN.md) (中文), with language links at the top of each.
+- dsh-plugin.org market readiness: the `dsh-plugin` GitHub topic and the install command in both
+  READMEs.
 
 ### Docs
 - Market submission filed at

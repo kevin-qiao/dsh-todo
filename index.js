@@ -12,7 +12,7 @@
  * `/dsh-todo` is registered only when the composition provides `webServer`; the store and the
  * agent tool stay available in a headless profile, so the model can still read and edit notes.
  *
- * @module @local/dsh-sticker-todo
+ * @module dsh-sticker-todo
  */
 import { createStore, dueReminders, sortTodos, InputError, defaultDataFile } from './lib/store.js'
 import { createAiLayer } from './lib/ai.js'
