@@ -6,6 +6,11 @@ All notable changes to this plugin are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- README preview screenshots (`docs/preview-*.png`) and a GitHub-style bilingual preview section.
+- Contributing guide, security policy and GitHub issue/PR templates.
+- CI workflow that runs the offline verification suites on Node 20/22/24.
+
 ## [1.5.0] — 2026-11-05
 
 ### Added

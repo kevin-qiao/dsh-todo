@@ -14,6 +14,17 @@ A **bilingual sticky-note todo board** for the DeepSeek Harness Web GUI.
 
 [中文](#中文) · [English](#english)
 
+## 预览 · Preview
+
+| 便利贴视图 · Sticky board | 极简列表（点行展开）· Minimal list |
+|---|---|
+| ![便利贴视图](docs/preview-board.png) | ![极简列表](docs/preview-minimal-list.png) |
+
+![新建便签弹窗 · Composer dialog](docs/preview-composer.png)
+
+> 截图为示例数据；界面支持中英双语，可通过面板头部按钮切换。
+> Screenshots use demo data; the UI is bilingual and switches from the header.
+
 ---
 
 ## 中文
