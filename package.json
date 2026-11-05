@@ -5,6 +5,14 @@
   "license": "MIT",
   "type": "module",
   "description": "Bilingual (中文 / English) sticker-style personal TODO panel in the DSH Web sidebar: sticky-board and minimal-list views, a note composer dialog, quick due dates, timed reminders, font choices, tag grouping, pick-or-type AI note advice, motion and a polished board.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kevin-qiao/dsh-todo.git"
+  },
+  "homepage": "https://github.com/kevin-qiao/dsh-todo#readme",
+  "bugs": {
+    "url": "https://github.com/kevin-qiao/dsh-todo/issues"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",

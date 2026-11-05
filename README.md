@@ -9,7 +9,8 @@ A **bilingual sticky-note todo board** for the DeepSeek Harness Web GUI.
 ![DSH](https://img.shields.io/badge/DSH-Web%20GUI-0b7285)
 ![i18n](https://img.shields.io/badge/i18n-zh%20%7C%20en-2f9e44)
 ![node](https://img.shields.io/badge/node-%E2%89%A518-339933)
-![license](https://img.shields.io/badge/license-private-lightgrey)
+![license](https://img.shields.io/badge/license-MIT-2f9e44)
+[![verify](https://github.com/kevin-qiao/dsh-todo/actions/workflows/verify.yml/badge.svg)](https://github.com/kevin-qiao/dsh-todo/actions/workflows/verify.yml)
 
 [中文](#中文) · [English](#english)
 
@@ -63,7 +64,7 @@ AI 可以帮你安排日程、按主题分类打标签，也能对**单条便签
 插件是标准的 DSH bundle（`package.json` 带 `dsh.bundle.patch` / `dsh.client`），本地目录即可安装。
 
 ```bash
-git clone https://github.com/<your-account>/dsh-sticker-todo.git
+git clone https://github.com/kevin-qiao/dsh-todo.git
 ```
 
 1. 在 DSH 的 **插件管理** 里安装克隆出来的目录（`install_bundle`，目标 = 该目录的本地路径）；
@@ -245,7 +246,7 @@ The plugin is a standard DSH bundle (it ships `dsh.bundle.patch` and a `dsh.clie
 be installed from a local checkout.
 
 ```bash
-git clone https://github.com/<your-account>/dsh-sticker-todo.git
+git clone https://github.com/kevin-qiao/dsh-todo.git
 ```
 
 1. Install the cloned directory from the DSH **Plugin Manager** (`install_bundle`, target = that local
