@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in the panel, the /dsh-todo API or the AI actions is broken.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Please keep it reproducible and remove any private note content.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+      placeholder: The minimal mode expands the wrong row when …
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1. Open the 便利贴待办 panel
+        2. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Plugin version / commit
+      placeholder: v1.5.0 or the commit hash from the panel footer / repo
+    validations:
+      required: true
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DSH version
+      placeholder: e.g. 0.2.1-rc.5
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / errors
+      description: Browser console output, the `/dsh-todo` response, or the note JSON if relevant (redact anything private).
+      render: shell
+    validations:
+      required: false

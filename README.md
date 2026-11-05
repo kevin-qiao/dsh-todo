@@ -182,6 +182,14 @@ node verify/api-smoke.mjs http://127.0.0.1:55609   # 线上 HTTP 冒烟（端口
 - **想换界面语言？** 面板头部的语言按钮可以切 `中文` / `English`，`自动` 跟随 DSH。
 - **数据在哪？** `~/.dsh-sticker-todo/todos.json`，可以用行内配置 `dataFile` 改。
 
+### 参与贡献
+
+- 开发环境、验证命令和代码约定见 [CONTRIBUTING.md](./CONTRIBUTING.md)；
+- 安全漏洞请按 [SECURITY.md](./SECURITY.md) 私密上报，不要开公开 issue；
+- 使用问题、玩法分享和改进想法欢迎到 [Discussions](https://github.com/kevin-qiao/dsh-todo/discussions)
+  讨论；功能与缺陷请用仓库里的 issue 模板提交；
+- 版本变更见 [CHANGELOG.md](./CHANGELOG.md)。
+
 ### 许可
 
 [MIT](./LICENSE) © 2026 Kevin。未发布到 npm（`package.json` 里 `private: true`，防止误发布）。
@@ -376,6 +384,15 @@ all passing (`api-smoke` varies a little with the board contents; one check SKIP
   `ui` for a uniform UI font.
 - **How do I change the language?** Use the header language switch; `自动` follows the DSH locale.
 - **Where are the notes?** `~/.dsh-sticker-todo/todos.json` (override with `dataFile`).
+
+### Contributing
+
+- Development setup, verification commands and code conventions: [CONTRIBUTING.md](./CONTRIBUTING.md)
+- Please report security issues privately per [SECURITY.md](./SECURITY.md), not in a public issue;
+- Questions, setups and ideas are welcome in
+  [Discussions](https://github.com/kevin-qiao/dsh-todo/discussions); use the issue templates for bugs
+  and feature requests;
+- Version history: [CHANGELOG.md](./CHANGELOG.md).
 
 ### License
 

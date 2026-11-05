@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question / idea
+    url: https://github.com/kevin-qiao/dsh-todo/discussions
+    about: Ask questions, share setups or discuss ideas in Discussions.
+  - name: Security vulnerability
+    url: https://github.com/kevin-qiao/dsh-todo/security/advisories/new
+    about: Please report vulnerabilities privately, not in a public issue.

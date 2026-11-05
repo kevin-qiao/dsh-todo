@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest a new panel feature, AI behavior or API addition.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does it solve?
+      description: Describe the workflow that is awkward today, not just the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should the panel do? If it changes the API or the contract, say which part.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Anything you tried or rejected, and why.
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Panel / UI
+        - AI (planning, tagging, per-note advice)
+        - Host API / contract
+        - Agent tool (`sticker_todo`)
+        - Data / storage
+        - Docs
+        - Other
+    validations:
+      required: true
