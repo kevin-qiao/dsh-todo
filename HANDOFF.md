@@ -1,7 +1,21 @@
 # 便利贴待办 · Sticker TODO — 维护者交接
 
 本仓库就是插件包 `@local/dsh-sticker-todo` 的根目录。
-当前版本 **1.5.0**（v1.5.0：便利贴 / 极简列表双视图；v1.4.0：面板内中英双语切换 + 双语 GitHub 风格 README）。
+当前版本 **1.5.0**（v1.5.0：便利贴 / 极简列表双视图；v1.4.0：面板内中英双语切换）。
+
+## README 与插件市场
+
+- 文档分两个文件：`README.md`（英文，仓库默认展示）与 `README.zh-CN.md`（中文），顶部互相链接；
+  截图放在 `docs/`（示例数据）。
+- 已按 [dsh-plugin.org 收录要求](https://dsh-plugin.org/zh/submit) 准备：公开仓库、GitHub topic
+  `dsh-plugin`、根目录 `package.json`、插件导出 `apply(ctx)`、README 里有可复制的安装命令：
+  `dsh plugin --profile web add github:kevin-qiao/dsh-todo`。
+- 提交方式：在 [dshplugin/dsh-plugin-hub](https://github.com/dshplugin/dsh-plugin-hub/issues/new)
+  用市场给的表单开一个 Issue（标题 `[插件提交] kevin-qiao/dsh-todo — <一句话价值>`）。审核收录后，
+  把市场提供的 `listed.svg` 徽章加到 README（把链接里的 owner/slug 换成详情页地址）。
+- DSH 内置的「插件中心」只展示可 `dsh plugin --profile web add <npm 包名>` 一键安装的插件；
+  当前包名 `@local/dsh-sticker-todo` 不可发布，如需上插件中心要改名（如 `dsh-sticker-todo`）、
+  同步 `cordis.patch.yml` 的 name 与 profile 依赖后重新安装，并在 npm 发布。
 
 ## 安装状态（开发机上）
 

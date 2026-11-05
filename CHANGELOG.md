@@ -7,9 +7,15 @@ All notable changes to this plugin are documented here. The format follows
 ## [Unreleased]
 
 ### Added
-- README preview screenshots (`docs/preview-*.png`) and a GitHub-style bilingual preview section.
+- README preview screenshots (`docs/preview-*.png`) and a GitHub-style preview section.
 - Contributing guide, security policy and GitHub issue/PR templates.
 - CI workflow that runs the offline verification suites on Node 20/22/24.
+- dsh-plugin.org market readiness: the `dsh-plugin` GitHub topic and a copy-paste
+  `dsh plugin --profile web add github:kevin-qiao/dsh-todo` install command in both READMEs.
+
+### Changed
+- README split into two files: [`README.md`](./README.md) (English, repository default) and
+  [`README.zh-CN.md`](./README.zh-CN.md) (中文), with language links at the top of each.
 
 ## [1.5.0] — 2026-11-05
 
