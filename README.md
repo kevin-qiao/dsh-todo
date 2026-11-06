@@ -24,6 +24,8 @@ DeepSeek Harness Web GUI 里的一块便利贴待办板 —— 中英双语、�
 
 ![Composer dialog](https://raw.githubusercontent.com/kevin-qiao/dsh-todo/main/docs/preview-composer.png)
 
+![Memory dialog — preferences, weekly review, and AI-proposed facts you confirm](https://raw.githubusercontent.com/kevin-qiao/dsh-todo/main/docs/preview-memory.png)
+
 > Screenshots use demo data; the UI is bilingual and switches from the header. · 截图为示例数据，界面支持中英双语切换。
 
 ## What it is

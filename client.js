@@ -1659,6 +1659,7 @@ window.__ModuleLoader__.load({
 .stk-memory-edit{display:flex;flex-direction:column;gap:7px;flex:1 1 auto;min-width:0}
 .stk-memory-form{display:flex;align-items:center;gap:8px;margin-top:2px}
 .stk-memory-form .stk-field-input{flex:1 1 auto}
+.stk-memory-form .stk-btn{flex:0 0 auto;white-space:nowrap}
 .stk-memory-review{display:flex;flex-direction:column;gap:9px}
 .stk-memory-stats{display:flex;flex-wrap:wrap;gap:6px}
 .stk-memory-stat{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-2);font-size:11px;color:var(--dsw-alias-label-secondary)}

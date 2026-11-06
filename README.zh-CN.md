@@ -24,6 +24,8 @@ A **bilingual sticky-note todo board** for the DeepSeek Harness Web GUI.
 
 ![新建便签弹窗](https://raw.githubusercontent.com/kevin-qiao/dsh-todo/main/docs/preview-composer.png)
 
+![记忆弹窗 —— 我的偏好、本周复盘，以及 AI 提议、你确认后才落盘的事实](https://raw.githubusercontent.com/kevin-qiao/dsh-todo/main/docs/preview-memory.png)
+
 > 截图为示例数据；界面支持中英双语，可通过面板头部按钮切换。
 
 ## 简介
