@@ -26,8 +26,9 @@ npm 上仍是最新的 1.6.0，1.7.0 / 1.8.0 待发布）。
 
 ## README 与插件市场
 
-- 文档分两个文件：`README.md`（英文，仓库默认展示）与 `README.zh-CN.md`（中文），顶部互相链接；
-  截图放在 `docs/`（示例数据，README 用绝对地址引用以便 npm 页面显示）。
+- 文档分两个文件：`README.md`（**中文，仓库默认展示 / npm 页面**）与 `README.en.md`（英文），顶部互相
+  链接；截图放在 `docs/`（示例数据，README 用绝对地址引用以便 npm 页面显示）。两份都刻意保持精简，
+  只留安装、特性、使用、数据、验证与文档入口，细节进 `CONTRACT.md` / `docs/MEMORY.md`。
 - 已按 [dsh-plugin.org 收录要求](https://dsh-plugin.org/zh/submit) 准备：公开仓库、GitHub topic
   `dsh-plugin`、根目录 `package.json`、插件导出 `apply(ctx)`、README 里有可复制的安装命令
   `dsh plugin --profile web add dsh-sticker-todo`（源码安装为 `github:kevin-qiao/dsh-todo`）。
@@ -73,7 +74,7 @@ npm 上仍是最新的 1.6.0，1.7.0 / 1.8.0 待发布）。
 | `verify/` | 离线清单 / 离线 Host 集成 / 客户端渲染冒烟 / 线上 HTTP 冒烟 |
 | `CONTRACT.md` | Host/Client 之间的 API 契约（改造时先看这个；Round 7 = v1.7.0 记忆，Round 8 = v1.8.0 打标签 + 交给 DSH） |
 | `docs/MEMORY.md` | 记忆功能设计说明：为什么加、四层记忆、红线（模型只读不写）、数据模型、流、迁移 |
-| `README.md` / `README.zh-CN.md` | 英文 / 中文项目说明（GitHub 风格，互链） |
+| `README.md` / `README.en.md` | 中文（默认）/ 英文项目说明（精简版，互链） |
 
 ## 架构要点
 

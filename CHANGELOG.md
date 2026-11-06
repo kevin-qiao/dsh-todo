@@ -37,6 +37,10 @@ All notable changes to this plugin are documented here. The format follows
 - CONTRACT Round 8, both READMEs and HANDOFF document the corrected classification rule and the
   handoff; verification baselines updated (check-static 71, host-actions 49, client-render 58,
   `api-smoke` 28 — one check SKIPs until DSH restarts with the new Host code).
+- **README now defaults to Chinese and both language files are much shorter.** `README.md` is 中文
+  (the repository default and the npm package page) and `README.en.md` is the English mirror; both
+  keep only preview, features, install, usage, data, verification and doc links, with the details
+  moved to `CONTRACT.md` / `docs/MEMORY.md` / `HANDOFF.md`.
 
 ## [1.7.0] — 2026-11-06
 
@@ -99,8 +103,8 @@ All notable changes to this plugin are documented here. The format follows
   command and appear in the DSH in-app plugin center:
   `dsh plugin --profile web add dsh-sticker-todo`. The bundle row name in `cordis.patch.yml` follows
   the package name.
-- README split into two files: [`README.md`](./README.md) (English, repository default) and
-  [`README.zh-CN.md`](./README.zh-CN.md) (中文), with language links at the top of each.
+- README split into two language files with language links at the top of each (since v1.8.0 they are
+  `README.md` 中文 and `README.en.md` English).
 - README cross-links and screenshots use absolute URLs, so the npm package page renders them too.
 
 ### Added
