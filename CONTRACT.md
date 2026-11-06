@@ -77,7 +77,7 @@ Actions:
 | `aiPlan` | — | `{ "plan": PlanResult, "todos": Todo[] }` — applies `planAt` to todos and returns the fresh list |
 | `aiAdvice` | — | `{ "advice": AdviceResult }` |
 | `aiClearPlan` | — | `{ "todos": Todo[] }` — clears `planAt` |
-| `aiTag` | — | `{ "tagResult": TagResult, "todos": Todo[] }` — classifies every open note, writes `tags`, returns the fresh list |
+| `aiTag` | — | `{ "tagResult": TagResult, "todos": Todo[] }` — classifies every open note **that has no tags yet** (already-tagged notes are never overwritten), writes `tags`, returns the fresh list |
 | `aiNoteAdvice` | `id` (required), `history?`: `[{ question, answer }]` (0–3 entries) | `{ "kind": "advice", "advice": { "text", "source" }, "round": n }` or `{ "kind": "question", "question": "…", "round": n, "source": "model" }` — one round of the per-note advisory conversation |
 
 ### Todo
@@ -615,5 +615,69 @@ second call. `plan` / `advice` / `tag` pass the memory context through, exactly 
   behaviour unchanged.
 - Every new string goes into the existing `TEXT` dictionaries in **both** languages; `data.memory`
   must be tolerated when absent (older Host): no badge, empty memory dialog, no crash.
+
+## Round 8 (v1.8.0 — 只给未分类的便签打标签 + 把便签交给 DSH 处理)
+
+Two changes, no storage change, no new HTTP action.
+
+### `aiTag` only classifies untagged notes
+
+`ai.tag(todos, memory?)` filters the open board down to notes with **no tags at all**
+(`tags.length === 0`) before building the prompt, validating model output, or running the local
+keyword fallback. Matching `applyTags` keeps working on the returned items, so a note the user
+already tagged — by hand or by an earlier pass — keeps its tags; a second pass can never overwrite
+or extend them.
+
+- When at least one untagged note exists, the result is exactly the v1.7.0 `TagResult` for just
+  those notes (`items` only covers them, `summary` counts only them).
+- When the board has open notes but all of them carry tags, the Host returns
+  `{ summary: '所有未完成便签都已经有标签，不用再分类。', items: [], generatedAt, source: 'fallback' }`.
+- When there are no open notes at all, the summary is `当前没有待办，暂时不用整理标签。`.
+- Both empty cases are `source: 'fallback'`, are not written to disk, and never call the model.
+- The `sticker_todo` tool's `tag` action and the panel's 「分类打标签」 button inherit this
+  behaviour because they share `runAction`.
+
+### Client: 「交给 DSH」 handoff
+
+Every note gets a way to move itself into the chat composer so the main agent can help with it.
+This is **client-only**: no Host call, no new action, no data change.
+
+- **Button.** A `↗ 交给 DSH` / `↗ Ask DSH` button in the sticky-card action row and in the expanded
+  minimal-list row (same button style as the other note actions, `aria-label` + `title` from the
+  same string, `title` also carries a one-line hint).
+- **Prompt.** Clicking builds one plain-text prompt from the note and hands it to DSH **without
+  sending it**:
+
+  ```
+  帮我处理这条待办：<text>
+  详情：<note>                # this line is omitted when the note has no details
+  截止：<localized due> ｜ 优先级：<高/中/低> ｜ 标签：#a #b   # one line, only the parts that exist
+  便签 id：<id>
+  （来自便利贴待办面板，可以用 sticker_todo 工具更新它）
+
+  请直接推进：先判断这件事要怎么做，需要时用 sticker_todo 更新这条便签（补备注、拆成子项、改期或标记完成），不用先反问。
+  ```
+
+  In `en` mode the same prompt is written in English. The id always appears so the agent can address
+  the exact note.
+- **Delivery.** Obtain the client service from the plugin context:
+  `ctx.get('uiWorkspace')` (also accept the `ctx.uiWorkspace` property form). When it exposes a
+  `startSession` function, call
+
+  ```js
+  workspace.startSession(undefined, { prompt, whenDraftExists: 'append' })
+  ```
+
+  which opens the New Session draft and appends the prompt as new paragraphs — existing user text
+  and attachments are preserved, and nothing is submitted. On success show the toast
+  `已放进主对话框，检查后按回车发送` (en: `Added to the chat draft — review, then press Enter`).
+- **Fallback.** When the service is missing (older DSH), throws, or `startSession` is not a
+  function, copy the same prompt with `navigator.clipboard.writeText` and toast
+  `已复制，粘贴到主对话框即可`; if the clipboard is unavailable too, toast a short failure line.
+  The handler never throws and never blocks the panel.
+- **i18n.** New keys in the single `TEXT` table, both languages, same key set:
+  `note.handoff`, `note.handoffHint`, `note.handoffDraft`, `note.handoffCopied`, `note.handoffFailed`.
+- The button works in both views, for done and open notes, and needs no Host version check beyond
+  the optional service lookup.
 
 

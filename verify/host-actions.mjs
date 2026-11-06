@@ -22,8 +22,15 @@
  *   - POST aiNoteAdvice: deterministic fallback advice without a model, `question`/`advice`
  *     model rounds through a scripted model, question answer options (2–4) and advice alternatives,
  *     the three-question limit, and input validation
- *   - unknown action code
+ *   - unknown action code, and the `plan` / `tag` fallback paths
  *   - the model-facing `sticker_todo` tool: `tags` on add/update, `tag` action, `tags` echo
+ *
+ * v1.8.0 (CONTRACT.md round 8):
+ *   - `aiTag` classifies ONLY untagged open notes; tagged notes keep their tags (no write),
+ *     done notes are never classified, and both empty board cases return the fallback summary
+ *     without calling the model or rewriting the document
+ *   - a model reply that names an already-tagged note cannot overwrite its tags
+ *   - the `sticker_todo` tool's `tag` action inherits the same behaviour
  *
  * v1.7.0 memory surface (CONTRACT.md round 7):
  *   - document v2: create/update/remove events with `text` + `changes`, v1 migration
@@ -37,7 +44,7 @@
  * Exit codes: 0 all checks passed, 1 one or more checks failed.
  */
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from '../index.js'
@@ -555,6 +562,142 @@ async function main() {
       todos.forEach((todo, index) => validateTodo(todo, `state.todos[${index}]`))
       ensure(todos.some((todo) => todo.tags.length > 0), 'no note carries tags in /state after aiTag')
       return `${todos.length} todo(s)`
+    })
+
+    section('aiTag only classifies untagged notes (v1.8.0)')
+    await runCheck('aiTag tags only untagged open notes and leaves tagged / done notes untouched', async () => {
+      const filterPath = join(workDir, 'aiTag-filter.json')
+      const filterCaptured = createHarness(filterPath)
+      const filterApi = createClient(filterCaptured)
+      const taggedNote = expectOkData(await filterApi.action('add', { text: '已有标签的便签', tags: ['工作'] }), 'filter add tagged')
+      const untaggedNote = expectOkData(await filterApi.action('add', { text: '还没标签的便签' }), 'filter add untagged')
+      const doneNote = expectOkData(await filterApi.action('add', { text: '已完成的未分类便签' }), 'filter add done')
+      expectOkData(await filterApi.action('toggle', { id: doneNote.id, done: true }), 'filter toggle done')
+      const beforeDocument = readDocument(filterPath)
+      const beforeTagged = beforeDocument.todos.find((todo) => todo.id === taggedNote.id)
+
+      const data = expectOkData(await filterApi.action('aiTag'), 'filtered aiTag')
+      const tagResult = ensureObject(data.tagResult, 'filtered tagResult')
+      ensure(tagResult.source === 'fallback', `expected the fallback source without services, got ${JSON.stringify(tagResult.source)}`)
+      const items = ensureArray(tagResult.items, 'filtered tagResult.items')
+      ensure(items.length === 1, `only the untagged open note may be classified, got ${JSON.stringify(items.map((item) => item.id))}`)
+      ensure(items[0].id === untaggedNote.id, `the untagged note was expected, got ${JSON.stringify(items[0].id)}`)
+      ensure(ensureArray(items[0].tags, 'item tags').length >= 1, 'the untagged note must receive tags')
+      ensure(items.every((item) => item.id !== taggedNote.id && item.id !== doneNote.id), 'tagged/done notes must not appear in tagResult.items')
+
+      const todos = ensureArray(data.todos, 'filtered aiTag todos')
+      todos.forEach((todo, index) => validateTodo(todo, `filtered aiTag todos[${index}]`))
+      const byId = new Map(todos.map((todo) => [todo.id, todo]))
+      ensure(JSON.stringify(byId.get(taggedNote.id).tags) === JSON.stringify(['工作']), `the tagged note must keep its tags, got ${JSON.stringify(byId.get(taggedNote.id).tags)}`)
+      ensure(byId.get(untaggedNote.id).tags.length >= 1, 'the untagged note was not tagged in the returned board')
+      ensure(JSON.stringify(byId.get(doneNote.id).tags) === JSON.stringify([]), 'a done note must never be classified')
+
+      const afterTagged = readDocument(filterPath).todos.find((todo) => todo.id === taggedNote.id)
+      ensure(afterTagged.updatedAt === beforeTagged.updatedAt, 'the tagged note must not be rewritten (its updatedAt changed)')
+      ensure(JSON.stringify(afterTagged.tags) === JSON.stringify(['工作']), 'the tagged note tags changed on disk')
+      return `items=${items.length}, tagged note untouched`
+    })
+
+    await runCheck('a second aiTag pass on an all-tagged board is a no-op with the friendly summary', async () => {
+      const allTaggedPath = join(workDir, 'aiTag-all-tagged.json')
+      const allTaggedCaptured = createHarness(allTaggedPath)
+      const allTaggedApi = createClient(allTaggedCaptured)
+      expectOkData(await allTaggedApi.action('add', { text: '第一张有标签', tags: ['学习'] }), 'all-tagged add 1')
+      expectOkData(await allTaggedApi.action('add', { text: '第二张有标签', tags: '生活, 采购' }), 'all-tagged add 2')
+      const before = readFileSync(allTaggedPath, 'utf8')
+      const data = expectOkData(await allTaggedApi.action('aiTag'), 'all-tagged aiTag')
+      const tagResult = ensureObject(data.tagResult, 'all-tagged tagResult')
+      ensure(tagResult.summary === '所有未完成便签都已经有标签，不用再分类。', `summary mismatch: ${JSON.stringify(tagResult.summary)}`)
+      ensureArray(tagResult.items, 'all-tagged tagResult.items')
+      ensure(tagResult.items.length === 0, `expected no items, got ${JSON.stringify(tagResult.items)}`)
+      ensure(tagResult.source === 'fallback', `expected the fallback source, got ${JSON.stringify(tagResult.source)}`)
+      ensure(isIso(tagResult.generatedAt), 'generatedAt must be an ISO timestamp')
+      ensure(readFileSync(allTaggedPath, 'utf8') === before, 'an all-tagged pass must not rewrite the document')
+      return tagResult.summary
+    })
+
+    await runCheck('aiTag on an empty board returns the friendly summary and never writes', async () => {
+      const emptyFile = join(workDir, 'aiTag-empty.json')
+      const emptyApi = createClient(createHarness(emptyFile))
+      const data = expectOkData(await emptyApi.action('aiTag'), 'empty aiTag')
+      const tagResult = ensureObject(data.tagResult, 'empty tagResult')
+      ensure(tagResult.summary === '当前没有待办，暂时不用整理标签。', `summary mismatch: ${JSON.stringify(tagResult.summary)}`)
+      ensureArray(tagResult.items, 'empty tagResult.items')
+      ensure(tagResult.items.length === 0, 'an empty board must yield no items')
+      ensure(tagResult.source === 'fallback', 'an empty board must report the fallback source')
+      ensure(!existsSync(emptyFile), 'an empty-board aiTag must not create or rewrite the document')
+      return tagResult.summary
+    })
+
+    await runCheck('aiTag never calls the model when nothing is untagged', async () => {
+      let streamCalls = 0
+      const countingModel = {
+        llm: {
+          listProviders: () => [{ id: 'fake', name: 'Fake provider' }],
+          stream() {
+            streamCalls += 1
+            return (async function* stream() {
+              yield { type: 'text-delta', text: '{"summary":"不应被调用","items":[]}' }
+              yield { type: 'finish', reason: { kind: 'stop' } }
+            })()
+          },
+        },
+        agentDefaultModel: { currentSelection: () => ({ provider: 'fake', model: 'fake-model' }) },
+      }
+      const noModelApi = createClient(createHarness(join(workDir, 'aiTag-no-model.json'), countingModel))
+      expectOkData(await noModelApi.action('add', { text: '已经有标签的便签', tags: ['工作'] }), 'no-model add')
+      const data = expectOkData(await noModelApi.action('aiTag'), 'no-model aiTag')
+      ensure(
+        data.tagResult.summary === '所有未完成便签都已经有标签，不用再分类。',
+        `summary mismatch: ${JSON.stringify(data.tagResult.summary)}`,
+      )
+      ensure(streamCalls === 0, `an all-tagged board must not call the model, saw ${streamCalls} stream call(s)`)
+      return 'model not called'
+    })
+
+    await runCheck('model output cannot re-tag a note the user already tagged', async () => {
+      const responses = ['{"summary":"占位","items":[]}']
+      const modelHarness = createHarness(join(workDir, 'aiTag-model-filter.json'), createScriptedModel(responses))
+      const modelApi = createClient(modelHarness)
+      const tagged = expectOkData(await modelApi.action('add', { text: '用户已打标签', tags: ['工作'] }), 'model-filter add tagged')
+      const untagged = expectOkData(await modelApi.action('add', { text: '尚未打标签' }), 'model-filter add untagged')
+      responses[0] = JSON.stringify({
+        summary: '模型想改全部',
+        items: [{ id: tagged.id, tags: ['学习'] }, { id: untagged.id, tags: ['模型标签'] }],
+      })
+      const data = expectOkData(await modelApi.action('aiTag'), 'model-filter aiTag')
+      const tagResult = ensureObject(data.tagResult, 'model-filter tagResult')
+      ensure(tagResult.source === 'model', `the scripted model result should survive, got ${JSON.stringify(tagResult.source)}`)
+      const items = ensureArray(tagResult.items, 'model-filter items')
+      ensure(items.length === 1 && items[0].id === untagged.id, `only the untagged note may be tagged, got ${JSON.stringify(items)}`)
+      ensure(JSON.stringify(items[0].tags) === JSON.stringify(['模型标签']), `model tags for the untagged note mismatch: ${JSON.stringify(items[0].tags)}`)
+      const taggedAfter = ensureArray(data.todos, 'model-filter todos').find((todo) => todo.id === tagged.id)
+      ensure(JSON.stringify(taggedAfter.tags) === JSON.stringify(['工作']), `the model must not overwrite existing tags, got ${JSON.stringify(taggedAfter.tags)}`)
+      return 'tagged note protected from the model output'
+    })
+
+    await runCheck('the sticker_todo tool tag action inherits the untagged-only behaviour', async () => {
+      const toolHarness = createHarness(join(workDir, 'aiTag-tool.json'))
+      const tool = toolHarness.tool
+      ensure(tool && typeof tool.execute === 'function', 'the plugin did not register the sticker_todo tool')
+      const toolApi = createClient(toolHarness)
+      const tagged = expectOkData(await toolApi.action('add', { text: '工具测试已有标签', tags: ['工作'] }), 'tool-tag add tagged')
+      const untagged = expectOkData(await toolApi.action('add', { text: '工具测试没有标签' }), 'tool-tag add untagged')
+      const first = await tool.execute({ action: 'tag' })
+      ensure(first.ok === true, `tool tag failed: ${JSON.stringify(first.error)}`)
+      ensure(first.tagResult.source === 'fallback', `tool tag source must be fallback, got ${JSON.stringify(first.tagResult.source)}`)
+      const firstIds = ensureArray(first.tagResult.items, 'tool tag items').map((item) => item.id)
+      ensure(JSON.stringify(firstIds) === JSON.stringify([untagged.id]), `tool tag must only classify the untagged note, got ${JSON.stringify(firstIds)}`)
+      const taggedAfter = ensureArray(first.todos, 'tool tag todos').find((todo) => todo.id === tagged.id)
+      ensure(JSON.stringify(taggedAfter.tags) === JSON.stringify(['工作']), `the tool must not overwrite existing tags, got ${JSON.stringify(taggedAfter.tags)}`)
+      const second = await tool.execute({ action: 'tag' })
+      ensure(second.ok === true, `second tool tag failed: ${JSON.stringify(second.error)}`)
+      ensure(second.tagResult.items.length === 0, `the second tool tag pass must be a no-op, got ${JSON.stringify(second.tagResult.items)}`)
+      ensure(
+        second.tagResult.summary === '所有未完成便签都已经有标签，不用再分类。',
+        `second tool tag summary mismatch: ${JSON.stringify(second.tagResult.summary)}`,
+      )
+      return 'tool tag: only untagged, then no-op'
     })
 
     section('aiNoteAdvice (per-note advice conversation, no model service)')

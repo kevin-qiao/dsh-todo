@@ -1,8 +1,8 @@
 # 便利贴待办 · Sticker TODO — 维护者交接
 
 本仓库就是插件包 **`dsh-sticker-todo`** 的根目录（v1.6.0 起从 `@local/dsh-sticker-todo` 改名并发布到
-npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前开发版本 **1.7.0**（`package.json` / locale 已更新，
-npm 上仍是最新的 1.6.0，1.7.0 待发布）。
+npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前开发版本 **1.8.0**（`package.json` / locale 已更新，
+npm 上仍是最新的 1.6.0，1.7.0 / 1.8.0 待发布）。
 
 ## 发布到 npm
 
@@ -64,14 +64,14 @@ npm 上仍是最新的 1.6.0，1.7.0 待发布）。
 |---|---|
 | `index.js` | Host 入口：store、`sticker_todo` 工具、`/dsh-todo` HTTP API（含 6 个记忆动作） |
 | `lib/store.js` | v2 JSON 文档（便签 + 事件流 + 事实 + 建议线程）、校验、排序、提醒筛选、派生统计 |
-| `lib/ai.js` | 模型排程、标签分类、单条便签建议、周复盘、记忆候选 + 本地确定性兜底 + 记忆 prompt 块 |
+| `lib/ai.js` | 模型排程、标签分类（v1.8.0 起只给没有标签的未完成便签）、单条便签建议、周复盘、记忆候选 + 本地确定性兜底 + 记忆 prompt 块 |
 | `lib/tools.js` | 模型可见的 `sticker_todo` 工具（含 `tag`/`advice`/`remember`/`forget`/`memories`/`review`） |
-| `client.js` | 浏览器半边：侧栏图标、新建/编辑弹窗、便签画板、分组/筛选、字体、语言切换、AI 建议、记忆抽屉、改期徽章、动效 |
+| `client.js` | 浏览器半边：侧栏图标、新建/编辑弹窗、便签画板、分组/筛选、字体、语言切换、AI 建议、记忆抽屉、改期徽章、交给 DSH、动效 |
 | `cordis.patch.yml` | 插入 `sticker-todo` 行的 bundle patch（name = `dsh-sticker-todo`） |
 | `locale/en.json`, `locale/zh.json` | 插件管理里的标题与描述（中英双语，已提到 1.7.0 的记忆） |
 | `icon.svg` | 插件图标（原始绘制） |
 | `verify/` | 离线清单 / 离线 Host 集成 / 客户端渲染冒烟 / 线上 HTTP 冒烟 |
-| `CONTRACT.md` | Host/Client 之间的 API 契约（改造时先看这个；Round 7 = v1.7.0 记忆） |
+| `CONTRACT.md` | Host/Client 之间的 API 契约（改造时先看这个；Round 7 = v1.7.0 记忆，Round 8 = v1.8.0 打标签 + 交给 DSH） |
 | `docs/MEMORY.md` | 记忆功能设计说明：为什么加、四层记忆、红线（模型只读不写）、数据模型、流、迁移 |
 | `README.md` / `README.zh-CN.md` | 英文 / 中文项目说明（GitHub 风格，互链） |
 
@@ -96,7 +96,13 @@ npm 上仍是最新的 1.6.0，1.7.0 待发布）。
   两种视图共用同一份数据与同一套操作：便利贴模式是分组便签墙；极简模式是单行标题列表，
   点行就地展开详情与操作（同时只展开一条），展开态不持久化。视图切换只是呈现，不发 Host 请求。
 - **AI**：`lib/ai.js` 用 `ctx.llm.stream()` + `agentDefaultModel.currentSelection()`，严格 JSON 输出，
-  失败/超时/未配置模型时降级为本地启发式并标 `source: "fallback"`。
+  失败/超时/未配置模型时降级为本地启发式并标 `source: "fallback"`。v1.8.0 起 `tag()` 在构造 prompt、
+  校验模型输出和本地兜底之前，先把看板过滤成「未完成 + 没有任何标签」的便签；已有标签的便签不会被
+  覆盖，全部有标签 / 空看板两种空情况直接返回固定 summary（`source: "fallback"`，不调模型、不写盘）。
+- **交给 DSH**（v1.8.0，纯客户端）：凭 `ctx.get('uiWorkspace')`（也接受 `ctx.uiWorkspace` 属性形式）拿到
+  `dsh-client-ui-workspace` 服务，调 `startSession(undefined, { prompt, whenDraftExists: 'append' })`
+  把 prompt 放进新会话草稿（保留用户已有文字/附件，不发送）；服务缺失/不是函数/抛错/拒绝时降级为
+  `navigator.clipboard.writeText`，剪贴板也不可用则失败 toast。整个过程不发 `/dsh-todo` 请求、不阻塞面板。
 - **单条建议对话**：前端带 `history`（最多 3 轮）调用 `aiNoteAdvice`；question 必带 2–4 个选项
   （无有效选项会被 Host 拒绝并回退成建议），advice 可带 0–3 个备选做法；`round` 始终等于 `history.length`。
   v1.7.0 起 Host 会把这次 `history` 和 advice 存进 `memory.threads[id]`，重新打开时直接续上。
@@ -174,12 +180,31 @@ npm 上仍是最新的 1.6.0，1.7.0 待发布）。
 - 记忆抽屉里「本周复盘」「发现记忆」报错：模型不可用时**不应**报错（有本地兜底）；若报错先看
   `/dsh-todo/action review` 是否返回 `ok:true`，以及日志里的 `sticker-todo:` 行。
 
+## v1.8.0 改动（只给未分类便签打标签 + 交给 DSH）
+
+1. **`aiTag` 契约变更**：只分类 `tags.length === 0` 的未完成便签；已有标签（用户手动打的，或上一次
+   pass 打的）不会被覆盖或追加。全部有标签时返回 `所有未完成便签都已经有标签，不用再分类。`，
+   空看板返回 `当前没有待办，暂时不用整理标签。`；两种空情况都是 `source: "fallback"`、不调模型、
+   不写盘。没有新 HTTP 动作、没有存储变化；面板「分类打标签」与工具 `tag` 共用 `runAction`，行为一致。
+   ⚠️ 升级后第一次 `aiTag` 可能只补一小部分便签，这是预期；旧 Host 进程仍是旧行为，重启才生效。
+2. **交给 DSH**（纯客户端）：便利贴卡片动作行与极简展开行新增 `↗` 按钮，把便签拼成 prompt 放进
+   DSH 主对话框草稿，**不发送**。依赖的可选客户端服务来自 `dsh-client-ui-workspace`：
+   `uiWorkspace.startSession(undefined, { prompt, whenDraftExists: 'append' })`（`ctx.get('uiWorkspace')`
+   与 `ctx.uiWorkspace` 属性两种取法都支持）。降级顺序：服务缺失 / `startSession` 不是函数 /
+   同步抛错 / Promise reject → 用 `navigator.clipboard.writeText` 复制并 toast
+   `已复制，粘贴到主对话框即可`；剪贴板也不可用 → toast `无法放入主对话框，请手动复制`。
+   prompt 模板见 CONTRACT Round 8（标题、可选详情、截止/优先级/标签中存在的部分、便签 id、结尾指令），
+   en 模式输出英文。新增 5 个键：`note.handoff` / `note.handoffHint` / `note.handoffDraft` /
+   `note.handoffCopied` / `note.handoffFailed`。
+3. **排障**：线上 Host 未重启时 `aiTag` 仍会覆盖已有标签（新断言会 SKIP 而不是失败）；`↗` 在旧 DSH 上
+   会走剪贴板。只改 `client.js` 刷新页面即可；改 `lib/ai.js` 必须重启 DSH。
+
 ## 改完之后
 
 ```bash
-node verify/check-static.mjs      # 67 项：清单（含 1.7.0 / 零依赖）、patch、locale、icon、记忆标识、语法
-node verify/host-actions.mjs      # 43 项离线 Host 集成：HTTP handler、tags、AI、记忆（事件/改期/事实/线程/复盘/候选/迁移）、工具
-node verify/client-render.mjs     # 50 项客户端渲染冒烟：分组/弹窗/字体/AI 建议/动效/语言/双视图/记忆抽屉/改期徽章/旧 Host
+node verify/check-static.mjs      # 71 项：清单（含 1.8.0 / 零依赖）、patch、locale、icon、记忆标识、Round 8 标识、语法
+node verify/host-actions.mjs      # 49 项离线 Host 集成：HTTP handler、tags、AI（含只给未分类便签打标签）、记忆、工具
+node verify/client-render.mjs     # 58 项客户端渲染冒烟：分组/弹窗/字体/AI 建议/动效/语言/双视图/记忆抽屉/改期徽章/交给 DSH/旧 Host
 node verify/api-smoke.mjs        # 线上行为（默认 http://127.0.0.1:55609，实际端口会变，传参或设 DSH_WEB_URL）
 node verify/api-smoke.mjs http://127.0.0.1:65441
 ```
@@ -208,6 +233,14 @@ node verify/api-smoke.mjs http://127.0.0.1:65441
 六格复盘统计、候选记住/忽略、改期 ≥2 徽章（两种视图）、教练线程续聊、旧 Host 无 `memory` 不崩、
 清空记忆两步确认）；线上 `api-smoke` **27/27**（`state.memory`、临时事实 remember/updateFact/forget、
 review/memoryCandidates 只读且状态不变；临时事实在清理阶段也会被 forget）。
+
+已验证（v1.8.0，离线 + 线上）：`check-static` **71/71**、`host-actions` **49/49**、
+`client-render` **58/58**（aiTag 只分类未打标签的未完成便签、已有标签不被覆盖/不重写、全标签与空看板
+两种固定 summary、空情况不调模型、模型输出无法重打已标签便签、工具 `tag` 同行为；交给 DSH 在两种视图和
+已完成便签上都有按钮、zh/en prompt 逐字符校验、`startSession(undefined,{prompt,whenDraftExists:'append'})`
+调用形状、无 Host 请求、服务缺失/非函数/同步抛错/Promise reject 都降级剪贴板、剪贴板不可用失败 toast、
+`ctx.uiWorkspace` 属性形式与异步 resolve）。线上 `api-smoke` 27 通过 + 1 SKIP（当前运行中的 DSH 还是
+v1.8.0 之前的 Host，`aiTag` 仍会重分类；重启 DSH 后应为 28/28）。
 
 未验证：浏览器里的最终视觉手感（动效、明暗主题、弹窗、记忆抽屉布局、纸面质感、极简列表间距）、
 桌面通知授权弹窗；侧栏标签在语言切换后的即时重绘（依赖 host 下一次渲染，面板/提醒卡/通知是即时的）；

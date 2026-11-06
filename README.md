@@ -5,7 +5,7 @@
 A **bilingual sticky-note todo board** for the DeepSeek Harness Web GUI.
 DeepSeek Harness Web GUI 里的一块便利贴待办板 —— 中英双语、随手贴、AI 帮忙整理。
 
-![version](https://img.shields.io/badge/version-1.7.0-4d6bfe)
+![version](https://img.shields.io/badge/version-1.8.0-4d6bfe)
 [![npm](https://img.shields.io/npm/v/dsh-sticker-todo)](https://www.npmjs.com/package/dsh-sticker-todo)
 ![DSH](https://img.shields.io/badge/DSH-Web%20GUI-0b7285)
 ![i18n](https://img.shields.io/badge/i18n-zh%20%7C%20en-2f9e44)
@@ -58,8 +58,13 @@ route and the agent tool share one Host implementation, so the chat and the pane
   title-only list). In minimal mode a row expands in place to show its details, tags, dates and
   actions (one row at a time); the choice is remembered.
 - **AI schedule planning** — plans start times (`planAt`) backwards from deadlines.
-- **AI tag classification** — assigns 1–3 category tags to every open note and returns a grouping
-  summary.
+- **AI tag classification** — assigns 1–3 category tags to the open notes **that have no tags yet**
+  and returns a grouping summary; notes you already tagged are left untouched, so re-running the
+  pass only fills the gaps (an all-tagged board says so instead of reclassifying anything).
+- **「交给 DSH」handoff** — the `↗` action on any note (sticky card or expanded minimal row) builds a
+  prompt from the note — title, details, deadline / priority / tags, note id — and puts it into the
+  DSH chat draft without sending it. When the optional `uiWorkspace` service is unavailable it copies
+  the prompt to the clipboard instead, with a toast either way.
 - **Per-note AI advice** — the `✦` button on each note: the model answers with one short, concrete
   suggestion when it has enough context, or asks up to three questions first. Every question comes
   with **2–4 pickable answers plus a free-text box**; the final advice is editable and can be appended
@@ -137,7 +142,9 @@ AI calls use the model selected as DSH's current default model.
 - **Filter / grouping** — the filter row narrows the board by tag; `分组/平铺` switches the layout.
 - **Font / language / view** — `Aa 字体`, the language switch (`自动` / `中文` / `English`) and the
   view switch (`便利贴` sticky board / `极简` minimal list with click-to-expand rows).
-- **AI card** — schedule, classify & tag, clear plan.
+- **AI card** — schedule, classify & tag (only untagged notes), clear plan.
+- **交给 DSH** — `↗` on a card (or in an expanded minimal row) puts the note into the chat draft as a
+  prompt; review it in the composer and press Enter when you are ready.
 - **AI advice** — `✦` on a card; pick a suggested answer or type your own, then edit the advice and
   append it to the note.
 - **Memory** — `🧠 记忆` in the header: add / edit / forget preferences, generate a weekly review,
@@ -200,7 +207,7 @@ Browser (client.js)                      Host (index.js)
 | Capability | Route | On failure |
 |---|---|---|
 | Schedule planning | `POST {action:'aiPlan'}` | deterministic local scheduler, `source: "fallback"` |
-| Tag classification | `POST {action:'aiTag'}` | local keyword classifier, `source: "fallback"` |
+| Tag classification | `POST {action:'aiTag'}` | local keyword classifier, `source: "fallback"`; only untagged open notes are classified |
 | Per-note advice | `POST {action:'aiNoteAdvice'}` | local advice text, `source: "fallback"`, asks nothing |
 | Weekly review | `POST {action:'review'}` | deterministic review derived from the event log, `source: "fallback"` |
 | Memory candidates | `POST {action:'memoryCandidates'}` | local patterns only (postpone ≥ 3, a tag on ≥ 3 notes, chronic overdue), never stored |
@@ -245,9 +252,10 @@ All four scripts are dependency-free and use Node built-ins only. The first two 
 network or files outside the repo; `api-smoke` only creates and removes its own test notes, restores
 pre-existing tags after the `aiTag` check, and never deletes the user's finished notes.
 
-Baseline (v1.7.0): `check-static` 67 checks, `host-actions` 43, `client-render` 50, `api-smoke` 27 —
-all passing (`api-smoke` varies a little with the board contents and may SKIP a check that would
-protect user data; it forgets its temporary memory fact and removes every note it creates).
+Baseline (v1.8.0): `check-static` 71 checks, `host-actions` 49, `client-render` 58, `api-smoke` 28
+(27 pass + 1 SKIP while the running Host predates v1.8.0; 28/28 after a DSH restart) — all passing
+(`api-smoke` varies a little with the board contents and may SKIP a check that would protect user
+data; it forgets its temporary memory fact and removes every note it creates).
 
 ## FAQ
 

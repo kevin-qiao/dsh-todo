@@ -6,6 +6,38 @@ All notable changes to this plugin are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-11-06
+
+### Fixed
+- **`aiTag` no longer reclassifies notes that already carry tags.** The pass now only picks up
+  **untagged open notes** and never overwrites or extends tags the user added by hand (or that an
+  earlier pass added). When every open note already has tags it returns
+  `{ summary: '所有未完成便签都已经有标签，不用再分类。', items: [], source: 'fallback' }`; an empty
+  board returns `当前没有待办，暂时不用整理标签。`. Both empty cases are `source: 'fallback'`, never
+  call the model and never write the document.
+
+### Added
+- **「交给 DSH」/「Ask DSH」handoff** on every note (sticky-card action row and the expanded
+  minimal-list row): it builds a plain-text prompt from the note — title, optional details, the
+  deadline / priority / tags parts that exist, and the note id — and puts it into the DSH chat draft
+  with `uiWorkspace.startSession(undefined, { prompt, whenDraftExists: 'append' })`. Nothing is sent;
+  existing draft text and attachments are preserved. When the optional `uiWorkspace` service is
+  missing, not a function, throws or rejects, the same prompt is copied to the clipboard; when the
+  clipboard is unavailable too, a short failure toast is shown. The handler never throws, works in
+  both views (open and done notes) and never calls `/dsh-todo`.
+- Five new bilingual strings in the client `TEXT` table: `note.handoff`, `note.handoffHint`,
+  `note.handoffDraft`, `note.handoffCopied`, `note.handoffFailed`.
+
+### API
+- No new HTTP action and no stored-field change: `aiTag` changed on the Host side, shared by the
+  panel's 「分类打标签」button and the `sticker_todo` tool's `tag` action. The handoff is client-only
+  and depends only on the optional `uiWorkspace` client service.
+
+### Docs
+- CONTRACT Round 8, both READMEs and HANDOFF document the corrected classification rule and the
+  handoff; verification baselines updated (check-static 71, host-actions 49, client-render 58,
+  `api-smoke` 28 — one check SKIPs until DSH restarts with the new Host code).
+
 ## [1.7.0] — 2026-11-06
 
 ### Added

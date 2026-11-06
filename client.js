@@ -136,6 +136,11 @@ window.__ModuleLoader__.load({
       'note.remind': ['1 小时后提醒', 'Remind in 1 hour'],
       'note.focus': ['定位这张便利贴', 'Focus this note'],
       'note.advice': ['AI 建议', 'AI advice'],
+      'note.handoff': ['交给 DSH', 'Ask DSH'],
+      'note.handoffHint': ['把这条便签放进 DSH 主对话框（不自动发送）', 'Put this note into the DSH chat draft (does not send)'],
+      'note.handoffDraft': ['已放进主对话框，检查后按回车发送', 'Added to the chat draft — review, then press Enter'],
+      'note.handoffCopied': ['已复制，粘贴到主对话框即可', 'Copied — paste it into the chat'],
+      'note.handoffFailed': ['无法放入主对话框，请手动复制', 'Could not add it to the chat — please copy manually'],
       'due.overdue': ['逾期', 'Overdue'],
       'due.today': ['今天', 'Today'],
       'due.tomorrow': ['明天', 'Tomorrow'],
@@ -334,6 +339,65 @@ window.__ModuleLoader__.load({
         .filter((round) => round && typeof round.question === 'string' && typeof round.answer === 'string')
         .map((round) => ({ question: round.question, answer: round.answer }))
         .slice(0, MAX_ADVICE_ROUNDS)
+    }
+
+    /* ---------------------------------------------------------------- handoff */
+
+    /** Client context captured in apply(); lets the panel reach optional client services. */
+    let pluginContext = null
+
+    /** Resolve the optional `uiWorkspace` client service from the captured plugin context. */
+    function resolveUiWorkspace() {
+      if (pluginContext === null) return null
+      try {
+        if (typeof pluginContext.get === 'function') {
+          const service = pluginContext.get('uiWorkspace')
+          if (service) return service
+        }
+      } catch {
+        /* fall through to the property form */
+      }
+      try {
+        return pluginContext.uiWorkspace ?? null
+      } catch {
+        return null
+      }
+    }
+
+    /**
+     * Build the plain-text prompt handed to the DSH chat draft for one note (Round 8 template):
+     * title, optional details, the parts of due/priority/tags that exist, the note id, and a
+     * closing instruction telling the main agent to update the note with the sticker_todo tool.
+     * @param {Record<string, any>} todo one note.
+     * @param {{ t: Function, localeId: string, language: 'zh'|'en' }} options translator + locale.
+     * @returns {string} the prompt text.
+     */
+    function buildHandoffPrompt(todo, { t, localeId, language }) {
+      const zh = language === 'zh'
+      const text = String(todo?.text ?? '')
+      const note = typeof todo?.note === 'string' ? todo.note.trim() : ''
+      const priority = todo?.priority === 1 || todo?.priority === 3 ? todo.priority : 2
+      const tags = todoTags(todo)
+      const colon = zh ? '：' : ': '
+      const separator = zh ? ' ｜ ' : ' | '
+      const lines = [zh ? `帮我处理这条待办：${text}` : `Help me handle this todo: ${text}`]
+      if (note !== '') lines.push(`${zh ? '详情' : 'Details'}${colon}${note}`)
+      const meta = []
+      if (typeof todo?.dueAt === 'string' && todo.dueAt !== '') {
+        meta.push(`${zh ? '截止' : 'Due'}${colon}${formatDateTime(todo.dueAt, localeId)}`)
+      }
+      meta.push(`${zh ? '优先级' : 'Priority'}${colon}${t(`priority.${priority}`)}`)
+      if (tags.length > 0) meta.push(`${zh ? '标签' : 'Tags'}${colon}${tags.map((tag) => `#${tag}`).join(' ')}`)
+      lines.push(meta.join(separator))
+      lines.push(`${zh ? '便签 id' : 'Note id'}${colon}${String(todo?.id ?? '')}`)
+      lines.push(zh
+        ? '（来自便利贴待办面板，可以用 sticker_todo 工具更新它）'
+        : '(From the Sticker TODO panel — you can update it with the sticker_todo tool)')
+      lines.push('')
+      lines.push(zh
+        ? '请直接推进：先判断这件事要怎么做，需要时用 sticker_todo 更新这条便签（补备注、拆成子项、改期或标记完成），不用先反问。'
+        : 'Please move it forward directly: work out what needs doing first, and when useful update this note with sticker_todo (add details, break it into steps, reschedule, or mark it done) rather than asking first.')
+      return lines.join('\n')
     }
 
     /**
@@ -989,6 +1053,11 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', className: 'stk-note-action', title: t('note.remind'), 'aria-label': t('note.remind'), disabled: busy, onClick: props.onRemind }, '⏰'),
           h('button', { type: 'button', className: 'stk-note-action', title: t('note.focus'), 'aria-label': t('note.focus'), onClick: props.onFocus }, '◎'),
           h('button', {
+            type: 'button', className: 'stk-note-action stk-note-action--handoff',
+            title: `${t('note.handoff')} · ${t('note.handoffHint')}`, 'aria-label': t('note.handoff'),
+            onClick: props.onHandoff,
+          }, '↗'),
+          h('button', {
             type: 'button', className: `stk-note-action${armed ? ' stk-note-action--armed' : ''}`,
             title: armed ? t('note.deleteConfirm') : t('note.delete'), 'aria-label': t('note.delete'),
             disabled: busy, onClick: props.onDelete,
@@ -1041,6 +1110,11 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'stk-note-action', title: t('note.edit'), 'aria-label': t('note.edit'), disabled: busy, onClick: props.onEdit }, '✎'),
             h('button', { type: 'button', className: 'stk-note-action stk-note-action--ai', title: t('note.advice'), 'aria-label': t('note.advice'), onClick: props.onAdvice }, '✦'),
             h('button', { type: 'button', className: 'stk-note-action', title: t('note.remind'), 'aria-label': t('note.remind'), disabled: busy, onClick: props.onRemind }, '⏰'),
+            h('button', {
+              type: 'button', className: 'stk-note-action stk-note-action--handoff',
+              title: `${t('note.handoff')} · ${t('note.handoffHint')}`, 'aria-label': t('note.handoff'),
+              onClick: props.onHandoff,
+            }, '↗'),
             h('button', {
               type: 'button', className: `stk-note-action${armed ? ' stk-note-action--armed' : ''}`,
               title: armed ? t('note.deleteConfirm') : t('note.delete'), 'aria-label': t('note.delete'),
@@ -1537,6 +1611,7 @@ window.__ModuleLoader__.load({
 .stk-note-action:disabled{opacity:.5;cursor:default}
 .stk-note-action--armed{width:auto;padding:0 8px;border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary);background:#fff}
 .stk-note-action--ai{color:var(--dsw-alias-brand-primary);border-color:rgba(77,107,254,.42);background:rgba(255,255,255,.72)}
+.stk-note-action--handoff{color:#3a342b;border-color:rgba(58,52,43,.38);background:rgba(255,255,255,.72);font-weight:600}
 @media (hover:none){.stk-note-actions{opacity:1;transform:none}}
 /* --------------------------------------------------------------- dialogs */
 .stk-modal-layer{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(24,18,10,.5);animation:stk-layer-in .18s ease both}
@@ -1635,6 +1710,7 @@ window.__ModuleLoader__.load({
 .stk-list-actions .stk-note-action{color:var(--dsw-alias-label-secondary);border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2)}
 .stk-list-actions .stk-note-action:hover:not(:disabled){color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1)}
 .stk-list-actions .stk-note-action--ai{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary)}
+.stk-list-actions .stk-note-action--handoff{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2)}
 .stk-list-actions .stk-note-action--armed{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary);background:var(--dsw-alias-bg-overlay)}
 .stk-chip--list{color:var(--dsw-alias-label-secondary);border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2)}
 .stk-chip--list.stk-chip--tag:hover{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-bg-layer-2)}
@@ -1769,6 +1845,11 @@ window.__ModuleLoader__.load({
       // locale, `auto` keeps following the DSH locale (including live changes).
       const t = translatorFor(lang, localeT)
       const activeLocale = localeFor(lang, dshLocale)
+      // Language of generated free text (e.g. the 交给 DSH prompt): forced mode wins, otherwise
+      // it follows the same DSH locale as the UI.
+      const effectiveLanguage = lang === 'auto'
+        ? (String(dshLocale ?? '').toLowerCase().startsWith('zh') ? 'zh' : 'en')
+        : lang
 
       const tRef = useRef(t)
       tRef.current = t
@@ -2462,6 +2543,56 @@ window.__ModuleLoader__.load({
         if (node && typeof node.scrollIntoView === 'function') node.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
       }
 
+      /**
+       * 交给 DSH: build the prompt for this note and put it into the DSH chat draft without
+       * sending anything. Uses the optional `uiWorkspace` client service; falls back to the
+       * clipboard, and never throws or blocks the panel.
+       */
+      function handoffNote(todo) {
+        let prompt = ''
+        try {
+          prompt = buildHandoffPrompt(todo, { t, localeId: activeLocale, language: effectiveLanguage })
+        } catch {
+          if (mountedRef.current) pushToast(tRef.current('note.handoffFailed'), 'error')
+          return
+        }
+        const workspace = resolveUiWorkspace()
+        if (workspace !== null && typeof workspace.startSession === 'function') {
+          try {
+            const pending = workspace.startSession(undefined, { prompt, whenDraftExists: 'append' })
+            if (pending && typeof pending.then === 'function') {
+              pending.then(
+                () => {
+                  if (mountedRef.current) pushToast(tRef.current('note.handoffDraft'), 'ok')
+                },
+                () => copyHandoffPrompt(prompt),
+              )
+              return
+            }
+            if (mountedRef.current) pushToast(tRef.current('note.handoffDraft'), 'ok')
+            return
+          } catch {
+            /* fall through to the clipboard fallback */
+          }
+        }
+        copyHandoffPrompt(prompt)
+      }
+
+      /** Clipboard fallback for the handoff when the uiWorkspace service is unavailable. */
+      async function copyHandoffPrompt(prompt) {
+        try {
+          const clipboard = typeof navigator !== 'undefined' && navigator !== null ? navigator.clipboard : null
+          if (!clipboard || typeof clipboard.writeText !== 'function') {
+            if (mountedRef.current) pushToast(tRef.current('note.handoffFailed'), 'error')
+            return
+          }
+          await clipboard.writeText(prompt)
+          if (mountedRef.current) pushToast(tRef.current('note.handoffCopied'), 'ok')
+        } catch {
+          if (mountedRef.current) pushToast(tRef.current('note.handoffFailed'), 'error')
+        }
+      }
+
       async function clearCompleted() {
         const removed = await mutate('clearCompleted', {})
         if (removed === null) return
@@ -2760,6 +2891,7 @@ window.__ModuleLoader__.load({
           onDelete: () => askDelete(todo),
           onRemind: () => void quickRemind(todo),
           onFocus: () => focusNote(todo),
+          onHandoff: () => handoffNote(todo),
           onTagClick: (tag) => setTagFilter((current) => (current === tagKeyOf(tag) ? null : tagKeyOf(tag))),
         }))
       }
@@ -2781,6 +2913,7 @@ window.__ModuleLoader__.load({
           onAdvice: () => openNoteAdvice(todo),
           onRemind: () => void quickRemind(todo),
           onDelete: () => askDelete(todo),
+          onHandoff: () => handoffNote(todo),
           onTagClick: (tag) => setTagFilter((current) => (current === tagKeyOf(tag) ? null : tagKeyOf(tag))),
         }))
       }
@@ -2969,6 +3102,9 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots', 'layout', 'locale'],
       apply(ctx) {
+        // The panel component lives outside apply(), so remember the client context for optional
+        // services such as `uiWorkspace` (the 交给 DSH handoff).
+        pluginContext = ctx
         ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'sticker-todo: dictionaries')
         const t = ctx.locale.bind(NS)
 

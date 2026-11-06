@@ -15,9 +15,10 @@
  *   3. locale/en.json + locale/zh.json — metadata completeness, locale-differentiated text.
  *   4. icon.svg — present, SVG-ish, within the 256 KiB limit.
  *   5. node --check on every .js file in the bundle root and lib/ (verify/ excluded).
- *   6. v1.7.0 memory release — version 1.7.0, zero runtime dependencies, the memory
- *      actions / store / AI / tool / client strings, and the CONTRACT + docs/MEMORY.md
- *      documentation are all present.
+ *   6. v1.7.0 memory release — version 1.7.0-era memory surface, memory actions / store / AI /
+ *      tool / client strings, and the CONTRACT + docs/MEMORY.md documentation.
+ *   7. v1.8.0 handoff release — version 1.8.0, the untagged-only `aiTag` contract, the five
+ *      `note.handoff*` i18n strings in both languages and the client handoff implementation.
  *
  * Files that other teammates may still be writing (client.js, lib/ai.js, README.md)
  * are reported as NOTE rather than FAIL while they are genuinely absent, so this
@@ -278,10 +279,10 @@ function checkManifest() {
   if (typeof pkg.version === 'string' && /^\d+\.\d+\.\d+/.test(pkg.version)) pass('version', pkg.version);
   else fail('version', `expected a semver string, got ${JSON.stringify(pkg.version)}`);
 
-  // v1.7.0 is the memory release; the version is asserted exactly so docs and
+  // v1.8.0 is the handoff release; the version is asserted exactly so docs and
   // CHANGELOG entries cannot drift from the manifest.
-  if (pkg.version === '1.7.0') pass('version is 1.7.0 (memory release)');
-  else fail('version is 1.7.0 (memory release)', `expected "1.7.0", got ${JSON.stringify(pkg.version)}`);
+  if (pkg.version === '1.8.0') pass('version is 1.8.0 (handoff release)');
+  else fail('version is 1.8.0 (handoff release)', `expected "1.8.0", got ${JSON.stringify(pkg.version)}`);
 
   // The plugin must stay dependency-free: everything runs on Node built-ins.
   const dependencyFields = ['dependencies', 'peerDependencies', 'optionalDependencies'];
@@ -639,6 +640,68 @@ function checkMemoryRelease() {
 }
 
 /* ------------------------------------------------------------------ *
+ * 4c. v1.8.0 handoff release
+ * ------------------------------------------------------------------ */
+
+/** The five new i18n keys and their expected zh/en values (CONTRACT.md round 8). */
+const HANDOFF_TEXT = {
+  'note.handoff': ['交给 DSH', 'Ask DSH'],
+  'note.handoffHint': ['把这条便签放进 DSH 主对话框（不自动发送）', 'Put this note into the DSH chat draft (does not send)'],
+  'note.handoffDraft': ['已放进主对话框，检查后按回车发送', 'Added to the chat draft — review, then press Enter'],
+  'note.handoffCopied': ['已复制，粘贴到主对话框即可', 'Copied — paste it into the chat'],
+  'note.handoffFailed': ['无法放入主对话框，请手动复制', 'Could not add it to the chat — please copy manually'],
+};
+
+function checkHandoffRelease() {
+  section('v1.8.0 handoff release');
+
+  // Host: aiTag classifies only untagged notes ----------------------
+  const aiRead = readText('lib/ai.js');
+  if (aiRead.missing) { fail('lib/ai.js exists for the handoff release', 'file not found'); }
+  else if (!aiRead.ok) { fail('lib/ai.js is readable', aiRead.error); }
+  else {
+    checkContains('lib/ai.js classifies only notes without tags', aiRead.text, [
+      '!Array.isArray(todo.tags) || todo.tags.length === 0',
+      "所有未完成便签都已经有标签，不用再分类。",
+      "当前没有待办，暂时不用整理标签。",
+    ]);
+  }
+
+  // Client: five handoff strings, both languages --------------------
+  const clientRead = readText('client.js');
+  if (clientRead.missing) { fail('client.js exists for the handoff release', 'file not found'); }
+  else if (!clientRead.ok) { fail('client.js is readable', clientRead.error); }
+  else {
+    const missingStrings = Object.entries(HANDOFF_TEXT)
+      .filter(([key, [zh, en]]) => !clientRead.text.includes(`'${key}':`)
+        || !clientRead.text.includes(zh) || !clientRead.text.includes(en));
+    if (missingStrings.length === 0) pass('client.js ships the five handoff strings in both languages', Object.keys(HANDOFF_TEXT).length + ' keys');
+    else fail('client.js ships the five handoff strings in both languages', `missing: ${missingStrings.map(([key]) => key).join(', ')}`);
+    checkContains('client.js implements the handoff draft + clipboard fallback', clientRead.text, [
+      'function buildHandoffPrompt(',
+      'function resolveUiWorkspace(',
+      "get('uiWorkspace')",
+      'pluginContext = ctx',
+      "startSession(undefined, { prompt, whenDraftExists: 'append' })",
+      'navigator.clipboard',
+      'writeText(',
+      'stk-note-action--handoff',
+    ]);
+  }
+
+  // Documentation: CONTRACT round 8 --------------------------------
+  const contractRead = readText('CONTRACT.md');
+  if (contractRead.missing) fail('CONTRACT.md documents round 8', 'file not found');
+  else if (!contractRead.ok) fail('CONTRACT.md is readable', contractRead.error);
+  else {
+    checkContains('CONTRACT.md documents round 8', contractRead.text, [
+      '## Round 8 (v1.8.0', '### `aiTag` only classifies untagged notes',
+      'whenDraftExists', 'note.handoff',
+    ]);
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * 5. JavaScript syntax via `node --check`
  * ------------------------------------------------------------------ */
 
@@ -775,6 +838,7 @@ function main() {
   checkLocales();
   checkIcon();
   checkMemoryRelease();
+  checkHandoffRelease();
 
   // Presence of the declared runtime files (in-flight files are notes while absent).
   section('Runtime files present');

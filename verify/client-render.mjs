@@ -24,6 +24,10 @@
  *   - v1.7.0 memory: header 记忆/Memory dialog (facts list, weekly review with six stat
  *     chips, AI candidate proposals), the 改期 N 次 badge at >= 2 postponements, and the
  *     per-note advice dialog resuming a persisted `memory.threads` conversation
+ *   - v1.8.0 handoff: the 「交给 DSH」/「Ask DSH」 button in both views (open and done notes),
+ *     the zh/en prompt built from the note, delivery through the optional `uiWorkspace`
+ *     `startSession(undefined, { prompt, whenDraftExists: 'append' })` (draft only, never
+ *     sent, zero Host calls) and its clipboard / failure fallbacks
  *   - legacy Host rows without `tags` / without `data.memory` and old-Host `unknown_action`
  *     handling
  *
@@ -150,6 +154,43 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 25));
 const flushClose = () => new Promise((resolve) => setTimeout(resolve, 220));
 
 /* ------------------------------------------------------------------ *
+ * Optional client services (v1.8.0 handoff) and clipboard shims.
+ * The service map is opt-in: every pre-existing check runs with no
+ * `uiWorkspace` and therefore keeps the old behaviour byte for byte.
+ * ------------------------------------------------------------------ */
+
+/** Services returned by the fake context's `get(name)` (e.g. `uiWorkspace`). */
+const clientServices = {};
+let hostContext = null;
+
+/** Install (or clear) a fake `uiWorkspace` service for the next check. */
+function stubUiWorkspace(service) {
+  if (service === undefined) delete clientServices.uiWorkspace;
+  else clientServices.uiWorkspace = service;
+}
+
+/** Remove both lookup forms of the service between checks. */
+function resetUiWorkspace() {
+  delete clientServices.uiWorkspace;
+  if (hostContext) delete hostContext.uiWorkspace;
+}
+
+const savedNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+
+/** Install a fake `navigator` (`{ clipboard: ... }`); pass undefined for "no navigator". */
+function stubNavigator(value) {
+  Object.defineProperty(globalThis, 'navigator', {
+    value, configurable: true, enumerable: true, writable: true,
+  });
+}
+
+/** Restore the runtime's real navigator after a clipboard check. */
+function restoreNavigator() {
+  if (savedNavigatorDescriptor) Object.defineProperty(globalThis, 'navigator', savedNavigatorDescriptor);
+  else delete globalThis.navigator;
+}
+
+/* ------------------------------------------------------------------ *
  * Load the client module and register it with a fake Host context.
  * ------------------------------------------------------------------ */
 
@@ -175,7 +216,10 @@ const plugin = factory((name) => {
 
 const components = {};
 const dictionaries = {};
-plugin.apply({
+hostContext = {
+  get(name) {
+    return Object.prototype.hasOwnProperty.call(clientServices, name) ? clientServices[name] : undefined;
+  },
   effect(fn, label) {
     if (label === 'sticker-todo: dictionaries') fn();
   },
@@ -197,7 +241,8 @@ plugin.apply({
       return { dispose() {} };
     },
   },
-});
+};
+plugin.apply(hostContext);
 
 const Panel = components.main;
 if (typeof Panel !== 'function') {
@@ -497,6 +542,7 @@ async function main() {
       'memory.candidatesTitle', 'memory.clear', 'memory.postponeTimes', 'memory.continueThread',
       'memory.stats.completed', 'memory.stats.created', 'memory.stats.postponed',
       'memory.stats.removed', 'memory.stats.open', 'memory.stats.overdue',
+      'note.handoff', 'note.handoffHint', 'note.handoffDraft', 'note.handoffCopied', 'note.handoffFailed',
     ]) {
       assert(typeof dictionary.zh[key] === 'string' && dictionary.zh[key] !== '', `zh missing ${key}`);
       assert(typeof dictionary.en[key] === 'string' && dictionary.en[key] !== '', `en missing ${key}`);
@@ -521,6 +567,7 @@ async function main() {
       '--stk-note-font:', '.stk-chip--option', '.stk-lang-menu', '.stk-view-menu',
       '.stk-list-item{', '.stk-list-row{', '.stk-list-details{', '.stk-list-due{',
       '.stk-modal--memory', '.stk-memory-section', '.stk-memory-stat', '.stk-chip--postpone',
+      '.stk-note-action--handoff',
     ]) {
       assertIncludes(css, needle, `stylesheet missing ${needle}`);
     }
@@ -1369,6 +1416,230 @@ async function main() {
     assert(fetchCalls.some((call) => call.body && call.body.action === 'clearMemory'), 'the second click should POST clearMemory');
     assert(hooks[STATE.memoryReview] === null && hooks[STATE.memoryCandidates] === null, 'clearing should reset the review/candidate views');
     assert(hooks[STATE.toast] && hooks[STATE.toast].text === en['memory.cleared'], 'cleared toast missing');
+  });
+
+  /* ---------------- v1.8.0 交给 DSH handoff ---------------- */
+  /** Independent implementation of the client's `formatDateTime` (Intl, same options). */
+  const expectedDateTime = (iso, localeId) => new Intl.DateTimeFormat(localeId, {
+    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  }).format(new Date(iso));
+
+  const handoffButton = (tree, id, dict = zhDict()) => {
+    const card = cardOf(tree, id);
+    return card
+      ? flatten(card).find((node) => node.type === 'button' && node.props['aria-label'] === dict['note.handoff'])
+      : undefined;
+  };
+
+  /** Independent implementation of the Round 8 prompt template for one note. */
+  function expectedHandoffPrompt(todo, { language, localeId, t }) {
+    const zh = language === 'zh';
+    const colon = zh ? '：' : ': ';
+    const separator = zh ? ' ｜ ' : ' | ';
+    const lines = [zh ? `帮我处理这条待办：${todo.text}` : `Help me handle this todo: ${todo.text}`];
+    const note = typeof todo.note === 'string' ? todo.note.trim() : '';
+    if (note !== '') lines.push(`${zh ? '详情' : 'Details'}${colon}${note}`);
+    const priority = todo.priority === 1 || todo.priority === 3 ? todo.priority : 2;
+    const meta = [];
+    if (typeof todo.dueAt === 'string' && todo.dueAt !== '') meta.push(`${zh ? '截止' : 'Due'}${colon}${expectedDateTime(todo.dueAt, localeId)}`);
+    meta.push(`${zh ? '优先级' : 'Priority'}${colon}${t(`priority.${priority}`)}`);
+    if (todo.tags.length > 0) meta.push(`${zh ? '标签' : 'Tags'}${colon}${todo.tags.map((tag) => `#${tag}`).join(' ')}`);
+    lines.push(meta.join(separator));
+    lines.push(`${zh ? '便签 id' : 'Note id'}${colon}${todo.id}`);
+    lines.push(zh
+      ? '（来自便利贴待办面板，可以用 sticker_todo 工具更新它）'
+      : '(From the Sticker TODO panel — you can update it with the sticker_todo tool)');
+    lines.push('');
+    lines.push(zh
+      ? '请直接推进：先判断这件事要怎么做，需要时用 sticker_todo 更新这条便签（补备注、拆成子项、改期或标记完成），不用先反问。'
+      : 'Please move it forward directly: work out what needs doing first, and when useful update this note with sticker_todo (add details, break it into steps, reschedule, or mark it done) rather than asking first.');
+    return lines.join('\n');
+  }
+
+  await check('handoff: the 交给 DSH button exists in both views, for open and done notes', () => {
+    resetUiWorkspace();
+    resetHooks(seed({ snapshot: TAGGED_SNAPSHOT, loading: false, lang: 'zh' }));
+    let tree = renderTree();
+    assert(
+      nodesWithClass(tree, 'stk-note-action--handoff').length === 3,
+      `expected one handoff button per card, got ${nodesWithClass(tree, 'stk-note-action--handoff').length}`,
+    );
+    const button = handoffButton(tree, 'td_1');
+    assert(button, 'td_1 handoff button missing');
+    assert(
+      button.props.title === `${zhDict()['note.handoff']} · ${zhDict()['note.handoffHint']}`,
+      `the button title should carry the hint, got ${JSON.stringify(button.props.title)}`,
+    );
+
+    const doneTodo = makeTodo({ id: 'td_done', text: '已完成的事', done: true });
+    resetHooks(seed({
+      snapshot: { now: NOW, todos: [doneTodo], dueReminders: [], ai: { available: true, reason: null } },
+      loading: false,
+      lang: 'zh',
+    }));
+    tree = renderTree();
+    const doneButton = handoffButton(tree, 'td_done');
+    assert(doneButton, 'a done note must still offer the handoff button');
+    assert(!doneButton.props.disabled, 'the handoff button must not be disabled');
+
+    /* minimal view: only the expanded row carries the button */
+    resetHooks(seed({ snapshot: TAGGED_SNAPSHOT, loading: false, lang: 'zh', view: 'list' }));
+    tree = renderTree();
+    assert(nodesWithClass(tree, 'stk-note-action--handoff').length === 0, 'collapsed minimal rows must not render the handoff button');
+    flatten(tree).filter((node) => node.type === 'button' && hasClass(node, 'stk-list-row'))[0].props.onClick();
+    tree = renderTree();
+    assert(nodesWithClass(tree, 'stk-note-action--handoff').length === 1, 'the expanded minimal row must render the handoff button');
+  });
+
+  await check('handoff: zh prompt is built from the note and opens a draft session without sending', async () => {
+    resetUiWorkspace();
+    const sessions = [];
+    const clipboardCalls = [];
+    stubUiWorkspace({ startSession: (...args) => { sessions.push(args); } });
+    stubNavigator({ clipboard: { writeText: async (text) => { clipboardCalls.push(text); } } });
+    stubFetch({ ok: true, data: TAGGED_SNAPSHOT });
+    resetHooks(seed({ snapshot: TAGGED_SNAPSHOT, loading: false, lang: 'zh' }));
+    const tree = renderTree();
+    handoffButton(tree, 'td_1').props.onClick();
+    await flush();
+    assert(sessions.length === 1, `expected exactly one startSession call, got ${sessions.length}`);
+    assert(sessions[0][0] === undefined, `the session id must be undefined, got ${JSON.stringify(sessions[0][0])}`);
+    const options = sessions[0][1];
+    assert(options && options.whenDraftExists === 'append', `whenDraftExists must be "append", got ${JSON.stringify(options && options.whenDraftExists)}`);
+    const expected = expectedHandoffPrompt(TAGGED_TODOS[0], { language: 'zh', localeId: 'zh-CN', t: (key) => zhDict()[key] });
+    assert(options.prompt === expected, `zh prompt mismatch:\n--- got ---\n${options.prompt}\n--- expected ---\n${expected}`);
+    assert(hooks[STATE.toast] && hooks[STATE.toast].text === zhDict()['note.handoffDraft'], `draft toast missing: ${JSON.stringify(hooks[STATE.toast])}`);
+    assert(clipboardCalls.length === 0, 'the clipboard must not be used when the service works');
+    assert(fetchCalls.length === 0, 'the handoff must never call the /dsh-todo route');
+    resetUiWorkspace();
+    restoreNavigator();
+  });
+
+  await check('handoff: the prompt only includes the notes parts that exist', async () => {
+    resetUiWorkspace();
+    const bareTodo = makeTodo({ id: 'td_bare', text: '只有标题', note: '', dueAt: null, remindAt: null, tags: [], priority: 2 });
+    const bareSnapshot = { now: NOW, todos: [bareTodo], dueReminders: [], ai: { available: true, reason: null } };
+    const sessions = [];
+    stubUiWorkspace({ startSession: (...args) => { sessions.push(args); } });
+    stubNavigator({ clipboard: { writeText: async () => {} } });
+    resetHooks(seed({ snapshot: bareSnapshot, loading: false, lang: 'zh' }));
+    let tree = renderTree();
+    handoffButton(tree, 'td_bare').props.onClick();
+    await flush();
+    assert(sessions.length === 1, 'startSession should have been called for the bare note');
+    const prompt = sessions[0][1].prompt;
+    assert(!prompt.includes('详情：'), 'a note without details must not get a details line');
+    assert(!prompt.includes('截止：') && !prompt.includes('标签：'), 'due/tag parts must be omitted when absent');
+    assert(prompt.includes('优先级：中'), `the priority part must always be present, got ${JSON.stringify(prompt)}`);
+    assert(
+      prompt === expectedHandoffPrompt(bareTodo, { language: 'zh', localeId: 'zh-CN', t: (key) => zhDict()[key] }),
+      `bare prompt mismatch: ${JSON.stringify(prompt)}`,
+    );
+    resetUiWorkspace();
+    restoreNavigator();
+  });
+
+  await check('handoff: en mode builds the English prompt', async () => {
+    resetUiWorkspace();
+    const sessions = [];
+    stubUiWorkspace({ startSession: (...args) => { sessions.push(args); } });
+    stubNavigator({ clipboard: { writeText: async () => {} } });
+    resetHooks(seed({ snapshot: TAGGED_SNAPSHOT, loading: false, lang: 'en' }));
+    const tree = renderTree();
+    const button = handoffButton(tree, 'td_1', enDict());
+    assert(button, 'English handoff button missing');
+    button.props.onClick();
+    await flush();
+    assert(sessions.length === 1, 'startSession should have been called in English mode');
+    const expected = expectedHandoffPrompt(TAGGED_TODOS[0], { language: 'en', localeId: 'en-US', t: (key) => enDict()[key] });
+    assert(sessions[0][1].prompt === expected, `en prompt mismatch:\n--- got ---\n${sessions[0][1].prompt}\n--- expected ---\n${expected}`);
+    assert(hooks[STATE.toast] && hooks[STATE.toast].text === enDict()['note.handoffDraft'], 'English draft toast missing');
+    resetUiWorkspace();
+    restoreNavigator();
+  });
+
+  await check('handoff: no uiWorkspace service copies the prompt to the clipboard', async () => {
+    resetUiWorkspace();
+    const copied = [];
+    stubNavigator({ clipboard: { writeText: async (text) => { copied.push(text); } } });
+    stubFetch({ ok: true, data: TAGGED_SNAPSHOT });
+    resetHooks(seed({ snapshot: TAGGED_SNAPSHOT, loading: false, lang: 'zh' }));
+    const tree = renderTree();
+    handoffButton(tree, 'td_1').props.onClick();
+    await flush();
+    const expected = expectedHandoffPrompt(TAGGED_TODOS[0], { language: 'zh', localeId: 'zh-CN', t: (key) => zhDict()[key] });
+    assert(copied.length === 1 && copied[0] === expected, `the prompt should be copied verbatim, got ${JSON.stringify(copied)}`);
+    assert(hooks[STATE.toast] && hooks[STATE.toast].text === zhDict()['note.handoffCopied'], 'copied toast missing');
+    assert(fetchCalls.length === 0, 'the clipboard fallback must not call the Host');
+    restoreNavigator();
+  });
+
+  await check('handoff: a missing / throwing / rejecting startSession degrades to the clipboard', async () => {
+    const cases = [
+      ['not a function', { startSession: 'not-a-function' }],
+      ['throws synchronously', { startSession() { throw new Error('boom'); } }],
+      ['rejects its promise', { startSession() { return Promise.reject(new Error('boom')); } }],
+    ];
+    for (const [label, service] of cases) {
+      resetUiWorkspace();
+      stubUiWorkspace(service);
+      const copied = [];
+      stubNavigator({ clipboard: { writeText: async (text) => { copied.push(text); } } });
+      stubFetch({ ok: true, data: TAGGED_SNAPSHOT });
+      resetHooks(seed({ snapshot: TAGGED_SNAPSHOT, loading: false, lang: 'zh' }));
+      const tree = renderTree();
+      handoffButton(tree, 'td_1').props.onClick();
+      await flush();
+      assert(copied.length === 1, `${label}: expected the clipboard fallback, got ${copied.length} copy call(s)`);
+      assert(hooks[STATE.toast] && hooks[STATE.toast].text === zhDict()['note.handoffCopied'], `${label}: copied toast missing`);
+      assert(fetchCalls.length === 0, `${label}: the fallback must not call the Host`);
+    }
+    resetUiWorkspace();
+    restoreNavigator();
+  });
+
+  await check('handoff: failure toast when neither the service nor the clipboard is usable', async () => {
+    resetUiWorkspace();
+    stubNavigator({ clipboard: {} });
+    stubFetch({ ok: true, data: TAGGED_SNAPSHOT });
+    resetHooks(seed({ snapshot: TAGGED_SNAPSHOT, loading: false, lang: 'zh' }));
+    let tree = renderTree();
+    handoffButton(tree, 'td_1').props.onClick();
+    await flush();
+    assert(
+      hooks[STATE.toast] && hooks[STATE.toast].text === zhDict()['note.handoffFailed'],
+      `failure toast missing, got ${JSON.stringify(hooks[STATE.toast])}`,
+    );
+    assert(fetchCalls.length === 0, 'the failure path must not call the Host');
+
+    /* navigator itself missing behaves the same */
+    resetUiWorkspace();
+    stubNavigator(undefined);
+    resetHooks(seed({ snapshot: TAGGED_SNAPSHOT, loading: false, lang: 'zh' }));
+    tree = renderTree();
+    handoffButton(tree, 'td_1').props.onClick();
+    await flush();
+    assert(
+      hooks[STATE.toast] && hooks[STATE.toast].text === zhDict()['note.handoffFailed'],
+      'a missing navigator must also show the failure toast',
+    );
+    restoreNavigator();
+  });
+
+  await check('handoff: an async startSession resolves to the draft toast (ctx property form)', async () => {
+    resetUiWorkspace();
+    const sessions = [];
+    if (hostContext) hostContext.uiWorkspace = { startSession: (...args) => { sessions.push(args); return Promise.resolve(); } };
+    stubNavigator({ clipboard: { writeText: async () => { throw new Error('the clipboard should not be used'); } } });
+    stubFetch({ ok: true, data: TAGGED_SNAPSHOT });
+    resetHooks(seed({ snapshot: TAGGED_SNAPSHOT, loading: false, lang: 'zh' }));
+    const tree = renderTree();
+    handoffButton(tree, 'td_1').props.onClick();
+    await flush();
+    assert(sessions.length === 1, 'the ctx.uiWorkspace property form must be used when get() finds nothing');
+    assert(hooks[STATE.toast] && hooks[STATE.toast].text === zhDict()['note.handoffDraft'], 'draft toast missing after the async session resolves');
+    resetUiWorkspace();
+    restoreNavigator();
   });
 
   /* ---------------- legacy Host ---------------- */

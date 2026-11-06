@@ -23,6 +23,8 @@
  * temporary fact's remember / updateFact / forget round-trip, and the read-only `review`
  * and `memoryCandidates` actions. Temp facts are always forgotten in cleanup; the checks
  * never touch the user's own facts, threads, events or notes.
+ * v1.8.0: also covers the untagged-only `aiTag` contract — notes that already carried tags
+ * before the run must keep exactly those tags and must not appear in `tagResult.items`.
  *
  * Exit codes:
  *   0  all checks passed (skips allowed)
@@ -56,6 +58,7 @@ const state = {
   openId: null,
   clearMeId: null,
   taggedId: null,
+  aiTagItemIds: [],
 };
 let cleanupRemoved = 0;
 let cleanupFailed = 0;
@@ -318,7 +321,6 @@ async function requireV11() {
 
 /** Cached v1.2.0 capability probe: true / false / null (not probed yet). */
 let v12Supported = null;
-
 /** Detect whether the running Host knows `aiNoteAdvice` (non-mutating probe). */
 async function detectV12() {
   if (v12Supported !== null) return v12Supported;
@@ -686,6 +688,7 @@ function registerChecks(initialEnvelope) {
       ensureIso(tagResult.generatedAt, 'tagResult.generatedAt');
       const items = ensureArray(tagResult.items, 'tagResult.items');
       ensure(items.length > 0, 'tagResult.items is empty although the board has open notes');
+      state.aiTagItemIds = items.map((item) => item?.id).filter((id) => typeof id === 'string');
 
       const todos = ensureArray(data.todos, 'aiTag.todos');
       const byId = new Map();
@@ -704,6 +707,41 @@ function registerChecks(initialEnvelope) {
           `todo ${item.id} tags ${JSON.stringify(todo.tags)} do not match tagResult ${JSON.stringify(item.tags)}`);
       }
       return `items=${items.length}, source=${tagResult.source}`;
+    }],
+
+    ['aiTag leaves pre-existing tags untouched (v1.8.0)', async () => {
+      await requireV11();
+      const envelope = await requestState();
+      const todos = ensureArray(envelope?.data?.todos, 'state.data.todos');
+      const byId = new Map(todos.map((todo) => [todo.id, todo]));
+      const classified = new Set(Array.isArray(state.aiTagItemIds) ? state.aiTagItemIds : []);
+      // A Host that still reclassifies tagged notes predates v1.8.0; report SKIP rather than a
+      // false failure (the Host half only reloads when DSH restarts).
+      if (state.taggedId && classified.has(state.taggedId)) {
+        throw new SkipCheck('the running Host predates v1.8.0 (aiTag still reclassifies tagged notes) — restart DSH to load the new host code');
+      }
+      let protectedCount = 0;
+      for (const [id, tags] of initialBoard.tags) {
+        if (tags.length === 0) continue; // untagged notes are the ones aiTag is supposed to classify
+        const todo = byId.get(id);
+        if (!todo) continue;
+        ensure(
+          JSON.stringify(todo.tags) === JSON.stringify(tags),
+          `aiTag changed the tags of the pre-existing tagged note ${id}: ${JSON.stringify(todo.tags)} !== ${JSON.stringify(tags)}`,
+        );
+        ensure(!classified.has(id), `aiTag must not reclassify the already-tagged note ${id}`);
+        protectedCount += 1;
+      }
+      // The note this suite tagged by hand must keep its tags too.
+      if (state.taggedId && byId.has(state.taggedId)) {
+        ensure(
+          JSON.stringify(byId.get(state.taggedId).tags) === JSON.stringify(['学习']),
+          `the suite's tagged note ${state.taggedId} lost its tags: ${JSON.stringify(byId.get(state.taggedId).tags)}`,
+        );
+        ensure(!classified.has(state.taggedId), `the suite's tagged note ${state.taggedId} must not be reclassified`);
+        protectedCount += 1;
+      }
+      return protectedCount === 0 ? 'no pre-existing tagged notes on the board' : `${protectedCount} already-tagged note(s) untouched`;
     }],
 
     ['state carries tags after aiTag', async () => {

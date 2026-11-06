@@ -5,7 +5,7 @@
 DeepSeek Harness Web GUI 里的一块**中英双语便利贴待办板** —— 随手贴、AI 帮忙整理。
 A **bilingual sticky-note todo board** for the DeepSeek Harness Web GUI.
 
-![version](https://img.shields.io/badge/version-1.7.0-4d6bfe)
+![version](https://img.shields.io/badge/version-1.8.0-4d6bfe)
 [![npm](https://img.shields.io/npm/v/dsh-sticker-todo)](https://www.npmjs.com/package/dsh-sticker-todo)
 ![DSH](https://img.shields.io/badge/DSH-Web%20GUI-0b7285)
 ![i18n](https://img.shields.io/badge/i18n-zh%20%7C%20en-2f9e44)
@@ -53,7 +53,11 @@ AI 可以帮你安排日程、按主题分类打标签，也能对**单条便签
 - **两种展现格式** — 头部视图切换：`便利贴`（现在的便签墙）/ `极简`（只显示标题的紧凑列表）。
   极简模式下点一行就地展开详情、标签、时间和操作，再点收起；一次只展开一条，选择会记住。
 - **AI 自动安排日程** — 读取未完成便签，按截止时间倒推，给出每条的开始时间（写入 `planAt`）。
-- **AI 分类打标签** — 一次给所有未完成便签打 1–3 个分类标签，并给一句分组总结。
+- **AI 分类打标签** — 只给**还没有标签**的未完成便签打 1–3 个分类标签，并给一句分组总结；已经有标签
+  的便签不会被覆盖，再跑一次只会补空缺（全部都有标签时直接回一句提示，不重新分类）。
+- **「交给 DSH」** — 每张便签（便利贴卡片或极简展开行）上的 `↗`：把便签内容拼成 prompt —— 标题、详情、
+  截止/优先级/标签、便签 id —— 放进 DSH 主对话框草稿，**不会自动发送**。可选的 `uiWorkspace` 服务不可用时
+  改为复制到剪贴板，两种结果都有 toast 提示。
 - **单条便签 AI 建议** — 每张便签上的 `✦`：模型信息足够就直接给一句可执行建议；不够就先问一个问题，
   最多 3 轮。每个问题都带 **2–4 个可点选的答案**，也可以自由输入；最终建议可编辑，一键「追加到备注」。
 - **记忆** — 头部 `🧠 记忆` 弹窗把重要的东西记下来：**我的偏好** 是可增删改的事实，会注入每个 AI prompt；
@@ -124,7 +128,9 @@ AI 使用的模型来自 DSH 当前的默认模型选择（设置里的默认模
 - **卡片操作**：勾选完成、编辑、`✦` AI 建议、1 小时后提醒、定位、两步删除。
 - **筛选/分组**：顶部筛选行按标签过滤；`分组/平铺` 切换布局。
 - **字体**：`Aa 字体`；**语言**：语言按钮（自动/中文/English）；**视图**：便利贴 / 极简。
-- **AI 卡片**：自动安排日程、分类打标签、清除安排。
+- **AI 卡片**：自动安排日程、分类打标签（只补没有标签的便签）、清除安排。
+- **交给 DSH**：卡片上（或极简展开行里）的 `↗` 把这条便签作为 prompt 放进主对话框草稿；
+  检查完在输入框里按回车再发送。
 - **AI 建议**：卡片上的 `✦`，按提示点选答案或自由输入，最后可编辑建议并追加到备注。
 - **记忆**：头部 `🧠 记忆` —— 增删改偏好、生成本周复盘、发现 AI 提议的记忆（记住 / 忽略），
   以及两步确认的「清空记忆」。改期两次及以上的便签显示 `改期 N 次`；教练对话过的便签可「继续聊聊」。
@@ -182,7 +188,7 @@ Browser (client.js)                      Host (index.js)
 | 能力 | 接口 | 失败时 |
 |---|---|---|
 | 排程 | `POST {action:'aiPlan'}` | 本地调度器，`source: "fallback"` |
-| 分类打标签 | `POST {action:'aiTag'}` | 本地关键词分类器，`source: "fallback"` |
+| 分类打标签 | `POST {action:'aiTag'}` | 本地关键词分类器，`source: "fallback"`；只分类没有标签的未完成便签 |
 | 单条便签建议 | `POST {action:'aiNoteAdvice'}` | 本地建议文本，`source: "fallback"`，不提问 |
 | 本周复盘 | `POST {action:'review'}` | 从事件流推导的确定性复盘，`source: "fallback"` |
 | 记忆候选 | `POST {action:'memoryCandidates'}` | 只按可核对模式生成（改期 ≥ 3 次、同一标签 ≥ 3 张、长期逾期），从不落盘 |
@@ -198,6 +204,7 @@ Browser (client.js)                      Host (index.js)
 `remember` · `forget` · `memories` · `review`
 
 读类结果还会回带 `memory: { facts: string[], stats }`，所以「我这周做得怎么样」一次调用就能回答。
+`tag` 动作与面板按钮行为一致：只给没有标签的未完成便签分类。
 
 例：`帮我把这周的事安排一下`、`帮我按主题整理待办并打标签`、`把「写周报」标成完成`、
 `记住我周五下午发周报`。
@@ -225,8 +232,10 @@ node verify/api-smoke.mjs http://127.0.0.1:55609   # 线上 HTTP 冒烟（端口
 测试便签并在结束时清理（不会删除你原有的已完成便签，`aiTag` 测试后会还原原标签；v1.7.0 的记忆检查只
 创建一条明确标记的临时事实并在清理时 forget，绝不改动你自己的事实 / 线程 / 事件 / 便签）。
 
-当前基线（v1.7.0）：`check-static` 67 项、`host-actions` 43 项、`client-render` 50 项、`api-smoke`
-27 项，全部通过（`api-smoke` 的结果随看板数据略有浮动，为保护用户数据的检查会 SKIP 而不是失败）。
+当前基线（v1.8.0）：`check-static` 71 项、`host-actions` 49 项、`client-render` 58 项、`api-smoke`
+28 项（当前运行中的 Host 尚未加载 v1.8.0 时是 27 通过 + 1 SKIP，重启 DSH 后 28/28），全部通过
+（`api-smoke` 的结果随看板数据略有浮动；为保护用户数据、或需要重启加载新 Host 代码的检查会 SKIP
+而不是失败）。
 
 ## 常见问题
 
