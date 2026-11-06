@@ -42,6 +42,12 @@ All notable changes to this plugin are documented here. The format follows
   keep only preview, features, install, usage, data, verification and doc links, with the details
   moved to `CONTRACT.md` / `docs/MEMORY.md` / `HANDOFF.md`.
 
+### Release
+- Published to npm as [`dsh-sticker-todo@1.8.0`](https://www.npmjs.com/package/dsh-sticker-todo)
+  (2026-11-06): `latest` = 1.8.0, tarball shasum `4de60ab0…` (13 files, 381,869 B unpacked), `v1.8.0`
+  tag and GitHub Release created. The 1.7.0 memory release was folded into 1.8.0 and never published
+  on its own.
+
 ## [1.7.0] — 2026-11-06
 
 ### Added

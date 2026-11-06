@@ -1,15 +1,15 @@
 # 便利贴待办 · Sticker TODO — 维护者交接
 
 本仓库就是插件包 **`dsh-sticker-todo`** 的根目录（v1.6.0 起从 `@local/dsh-sticker-todo` 改名并发布到
-npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前开发版本 **1.8.0**（`package.json` / locale 已更新，
-npm 上仍是最新的 1.6.0，1.7.0 / 1.8.0 待发布）。
+npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前版本 **1.8.0**，已发布到 npm（`latest = 1.8.0`）。
 
 ## 发布到 npm
 
 - npm 包名：`dsh-sticker-todo`（unscoped）；`package.json` 已去掉 `private`，保留
   `publishConfig.access: public`；`files` 只打包运行所需文件（README 两份 + LICENSE 由 npm 自动带上）。
-- **状态：`dsh-sticker-todo@1.6.0`（2026-11-06，首次 npm 发布）已上线**，`latest` 指向 1.6.0；
-  `v1.6.0` tag 与 GitHub Release 已建。当前仓库开发版本 1.7.0 尚未发布，发版时 `latest` 才会刷新。
+- **状态：`dsh-sticker-todo@1.8.0` 已上线（2026-11-06），`latest` 指向 1.8.0**；`v1.8.0` tag 与
+  GitHub Release 已建，tarball shasum `4de60ab0…` 与本地 `npm pack` 一致（13 个文件，解包 381,869 B）。
+  1.7.0（记忆）与 1.8.0（未分类打标签 + 交给 DSH）合并成一个版本发布，1.7.0 没有单独上 npm。
 - 后续发版流程：改 `package.json` 版本（并同步 README 版本徽章 / CHANGELOG）→
   `npm publish --otp=<6 位验证码>` → `npm view dsh-sticker-todo version` 确认 → 打 tag / Release。
   DSH 插件中心与 dsh-plugin.org 会在下一轮扫描自动刷新。
