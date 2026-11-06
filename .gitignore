@@ -13,3 +13,6 @@ Thumbs.db
 
 # a board file accidentally placed inside the repo
 todos.json
+
+# npm credentials must never be committed
+.npmrc

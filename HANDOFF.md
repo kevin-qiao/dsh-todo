@@ -13,11 +13,16 @@ npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前版本 **1.6.
   npm login
   npm whoami                 # 确认账号
   npm pack --dry-run         # 最后检查 tarball 内容（约 13 个文件）
-  npm publish                # 发布 1.6.0
+  npm publish --otp=<6 位验证码>   # 账号启用 2FA 后必须带 OTP（或交互输入）
   npm view dsh-sticker-todo  # 确认已上架
   ```
 
-  如果账号开了 2FA，`npm publish` 会要一次性验证码。
+  **npm 现在要求发布账号启用 2FA**（新账号首次发布会被 403 拦截：
+  `Two-factor authentication or granular access token with bypass 2fa enabled is required`）。
+  处理方式：在 npm 网站 Settings → Two-Factor Authentication 启用认证器，然后
+  `npm login` + `npm publish --otp=<当前验证码>`；或启用 2FA 后创建带 **Bypass 2FA** 的
+  Granular Access Token（Packages: read/write）用于后续自动发布。凭据只放 `~/.npmrc` 或环境变量，
+  仓库已把 `.npmrc` 加入 `.gitignore`。
 - 发布后请：把市场 Issue #649 的安装命令改成 `dsh plugin --profile web add dsh-sticker-todo`
   （或在新评论里补充）；在 README 加市场 `listed.svg` 徽章；按需打 `v1.6.0` tag + GitHub Release。
 - DSH 内置「插件中心」只展示 npm 可一键安装的插件，所以发布后即可被检索到。
