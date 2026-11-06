@@ -5,27 +5,23 @@ npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前版本 **1.6.
 
 ## 发布到 npm
 
-- npm 包名：`dsh-sticker-todo`（unscoped，首次发布 1.6.0）；`package.json` 已去掉 `private`，
-  保留 `publishConfig.access: public`；`files` 只打包运行所需文件（README 两份 + LICENSE 由 npm 自动带上）。
-- 首发命令（在仓库根目录，需要先登录 npm）：
-
-  ```bash
-  npm login
-  npm whoami                 # 确认账号
-  npm pack --dry-run         # 最后检查 tarball 内容（约 13 个文件）
-  npm publish --otp=<6 位验证码>   # 账号启用 2FA 后必须带 OTP（或交互输入）
-  npm view dsh-sticker-todo  # 确认已上架
-  ```
-
-  **npm 现在要求发布账号启用 2FA**（新账号首次发布会被 403 拦截：
+- npm 包名：`dsh-sticker-todo`（unscoped）；`package.json` 已去掉 `private`，保留
+  `publishConfig.access: public`；`files` 只打包运行所需文件（README 两份 + LICENSE 由 npm 自动带上）。
+- **状态：已发布 `dsh-sticker-todo@1.6.0`（2026-11-06，首次 npm 发布）**，`latest` 已指向 1.6.0，
+  tarball shasum 与本地 `npm pack` 一致（`57efe61f…`）；`v1.6.0` tag 与 GitHub Release 已建。
+- 后续发版流程：改 `package.json` 版本（并同步 README 版本徽章 / CHANGELOG）→
+  `npm publish --otp=<6 位验证码>` → `npm view dsh-sticker-todo version` 确认 → 打 tag / Release。
+  DSH 插件中心与 dsh-plugin.org 会在下一轮扫描自动刷新。
+- **npm 现在要求发布账号启用 2FA**（新账号首次发布会被 403 拦截：
   `Two-factor authentication or granular access token with bypass 2fa enabled is required`）。
   处理方式：在 npm 网站 Settings → Two-Factor Authentication 启用认证器，然后
   `npm login` + `npm publish --otp=<当前验证码>`；或启用 2FA 后创建带 **Bypass 2FA** 的
   Granular Access Token（Packages: read/write）用于后续自动发布。凭据只放 `~/.npmrc` 或环境变量，
   仓库已把 `.npmrc` 加入 `.gitignore`。
-- 发布后请：把市场 Issue #649 的安装命令改成 `dsh plugin --profile web add dsh-sticker-todo`
-  （或在新评论里补充）；在 README 加市场 `listed.svg` 徽章；按需打 `v1.6.0` tag + GitHub Release。
-- DSH 内置「插件中心」只展示 npm 可一键安装的插件，所以发布后即可被检索到。
+- npm 发布时会先生成一个 `0.0.0-stage` 占位版本（"Temporary package placeholder for staged
+  publishing"），`latest` 很快会切到真实版本；`npm view dsh-sticker-todo` 在几秒内可能先看到它，
+  属正常现象。想清理这个占位版本可（需要 OTP，且不要动 1.6.0）：
+  `npm unpublish dsh-sticker-todo@0.0.0-stage --otp=<code>`，失败也不影响使用。
 
 ## README 与插件市场
 
@@ -34,9 +30,11 @@ npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前版本 **1.6.
 - 已按 [dsh-plugin.org 收录要求](https://dsh-plugin.org/zh/submit) 准备：公开仓库、GitHub topic
   `dsh-plugin`、根目录 `package.json`、插件导出 `apply(ctx)`、README 里有可复制的安装命令
   `dsh plugin --profile web add dsh-sticker-todo`（源码安装为 `github:kevin-qiao/dsh-todo`）。
-- 本仓库的市场提交 Issue：[dshplugin/dsh-plugin-hub#649](https://github.com/dshplugin/dsh-plugin-hub/issues/649)
-  （已于 2026-11-06 提交，等待审核收录；npm 发布后可编辑补上 npm 安装命令）。
-- 审核收录后，把市场提供的 `listed.svg` 徽章加到两份 README（把链接里的 owner/slug 换成详情页地址）。
+- 市场提交 Issue：[dshplugin/dsh-plugin-hub#649](https://github.com/dshplugin/dsh-plugin-hub/issues/649)
+  （已由维护者关闭并说明自动收录流程）。
+- **已收录并验证**：https://dsh-plugin.org/plugins/kevin-qiao/dsh-todo （分类：界面与体验；
+  收录时间 2026-11-06）。下一轮扫描会把安装命令刷新成 npm 形式、版本刷到 1.6.0，并出现在 DSH 内置
+  插件中心。README 两份都已加 `listed.svg` 徽章。
 
 ## AI 协作与署名
 

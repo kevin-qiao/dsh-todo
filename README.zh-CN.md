@@ -12,6 +12,7 @@ A **bilingual sticky-note todo board** for the DeepSeek Harness Web GUI.
 ![node](https://img.shields.io/badge/node-%E2%89%A518-339933)
 ![license](https://img.shields.io/badge/license-MIT-2f9e44)
 [![verify](https://github.com/kevin-qiao/dsh-todo/actions/workflows/verify.yml/badge.svg)](https://github.com/kevin-qiao/dsh-todo/actions/workflows/verify.yml)
+[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/kevin-qiao/dsh-todo)
 
 [English](https://github.com/kevin-qiao/dsh-todo/blob/main/README.md) · **中文**
 

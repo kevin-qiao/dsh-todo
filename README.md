@@ -12,6 +12,7 @@ DeepSeek Harness Web GUI 里的一块便利贴待办板 —— 中英双语、�
 ![node](https://img.shields.io/badge/node-%E2%89%A518-339933)
 ![license](https://img.shields.io/badge/license-MIT-2f9e44)
 [![verify](https://github.com/kevin-qiao/dsh-todo/actions/workflows/verify.yml/badge.svg)](https://github.com/kevin-qiao/dsh-todo/actions/workflows/verify.yml)
+[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/kevin-qiao/dsh-todo)
 
 **English** · [中文](https://github.com/kevin-qiao/dsh-todo/blob/main/README.zh-CN.md)
 

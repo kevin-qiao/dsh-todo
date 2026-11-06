@@ -30,6 +30,12 @@ All notable changes to this plugin are documented here. The format follows
 - AI co-author trailer convention documented in [`HANDOFF.md`](./HANDOFF.md); commits created by the
   AI assistant carry `Co-authored-by: DeepSeek Harness (deepseek-flash) <noreply@deepseek.com>`.
 
+### Release
+- Published to npm as [`dsh-sticker-todo@1.6.0`](https://www.npmjs.com/package/dsh-sticker-todo)
+  (2026-11-06) — the first npm release, so the DSH in-app plugin center can install it in one command.
+- Listed on [dsh-plugin.org](https://dsh-plugin.org/plugins/kevin-qiao/dsh-todo) (category 界面与体验,
+  verified); the README now carries the `listed.svg` badge.
+
 ## [1.5.0] — 2026-11-05
 
 ### Added
