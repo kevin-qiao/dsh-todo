@@ -5,7 +5,7 @@
 DeepSeek Harness Web GUI 里的一块**中英双语便利贴待办板** —— 随手贴、AI 帮忙整理。
 A **bilingual sticky-note todo board** for the DeepSeek Harness Web GUI.
 
-![version](https://img.shields.io/badge/version-1.6.0-4d6bfe)
+![version](https://img.shields.io/badge/version-1.7.0-4d6bfe)
 [![npm](https://img.shields.io/npm/v/dsh-sticker-todo)](https://www.npmjs.com/package/dsh-sticker-todo)
 ![DSH](https://img.shields.io/badge/DSH-Web%20GUI-0b7285)
 ![i18n](https://img.shields.io/badge/i18n-zh%20%7C%20en-2f9e44)
@@ -31,7 +31,8 @@ A **bilingual sticky-note todo board** for the DeepSeek Harness Web GUI.
 `dsh-sticker-todo` 是一个 DeepSeek Harness（DSH）Web 插件：在左侧栏加一个「便利贴待办」入口，
 点开后是一面纸质背景的便利贴墙。每张便签有标题、详情、颜色、优先级、截止日期、定时提醒和标签；
 AI 可以帮你安排日程、按主题分类打标签，也能对**单条便签**给建议——信息不够时会先问你几个选择题。
-面板、HTTP 路由和 agent 工具共用同一份 Host 实现，聊天里改的和面板里看到的永远一致。
+从 v1.7.0 起它还会**记住**：改期与完成的历史、可编辑的偏好、每周复盘，以及关掉再打开还能接着聊的
+教练对话。面板、HTTP 路由和 agent 工具共用同一份 Host 实现，聊天里改的和面板里看到的永远一致。
 
 ## 功能特性
 
@@ -53,6 +54,11 @@ AI 可以帮你安排日程、按主题分类打标签，也能对**单条便签
 - **AI 分类打标签** — 一次给所有未完成便签打 1–3 个分类标签，并给一句分组总结。
 - **单条便签 AI 建议** — 每张便签上的 `✦`：模型信息足够就直接给一句可执行建议；不够就先问一个问题，
   最多 3 轮。每个问题都带 **2–4 个可点选的答案**，也可以自由输入；最终建议可编辑，一键「追加到备注」。
+- **记忆** — 头部 `🧠 记忆` 弹窗把重要的东西记下来：**我的偏好** 是可增删改的事实，会注入每个 AI prompt；
+  **本周复盘** 从事件流算出这一周（完成 / 新建 / 改期 / 删除，加上未完成与逾期）的复盘；**可能值得记住**
+  由 AI *提议* 事实，你点「记住」才会真正保存（点「忽略」只在本机丢弃）。「清空记忆」两步确认清空历史。
+  每条便签的教练对话与上次建议也跨会话保留：重新点开 `✦` 会直接显示上次建议，还可以「继续聊聊」。
+  被改期两次及以上的便签会显示 `改期 N 次` 徽章。
 - **动效与视觉** — 便签错峰淡入、弹窗开合、悬停/焦点过渡、AI loading shimmer；全部遵守
   `prefers-reduced-motion`，只用 `transform`/`opacity`，不卡顿。
 - **Agent 协作** — 同一块看板通过 `sticker_todo` 工具暴露给模型，可以直接说
@@ -118,12 +124,22 @@ AI 使用的模型来自 DSH 当前的默认模型选择（设置里的默认模
 - **字体**：`Aa 字体`；**语言**：语言按钮（自动/中文/English）；**视图**：便利贴 / 极简。
 - **AI 卡片**：自动安排日程、分类打标签、清除安排。
 - **AI 建议**：卡片上的 `✦`，按提示点选答案或自由输入，最后可编辑建议并追加到备注。
+- **记忆**：头部 `🧠 记忆` —— 增删改偏好、生成本周复盘、发现 AI 提议的记忆（记住 / 忽略），
+  以及两步确认的「清空记忆」。改期两次及以上的便签显示 `改期 N 次`；教练对话过的便签可「继续聊聊」。
 
 ## 数据
 
 - 默认 `~/.dsh-sticker-todo/todos.json`，每次修改原子写入（临时文件 + rename）。
-- 文档带 `version` 字段；v1.1.0 起每条便签有 `tags: string[]`，旧文件读入时补 `[]`。
-- 时间字段一律 ISO-8601 字符串（`dueAt` / `remindAt` / `remindFiredAt` / `planAt`），可为 `null`。
+- 从 v1.7.0 起文档是 **v2**：`{ version: 2, todos, events, memory: { facts, threads } }`。
+  v1 文件读入时补空的 `events` / `memory`，首次写入自动升到 2；旧版插件会忽略多出来的成员，
+  所以降级安装不会丢便签。
+- 记忆内容：事件流（≤ 2000 条，环形丢最旧）、用户事实（≤ 50 条，每条 1–120 字）、
+  每条便签的建议线程（≤ 200 条，每条最多 3 轮问答 + 上次建议）。`postpones`、周统计和
+  `averageOpenAgeDays` 都是读时派生、不落盘。
+- 时间字段一律 ISO-8601 字符串（`dueAt` / `remindAt` / `remindFiredAt` / `planAt`，以及事件与事实的
+  `at` / `createdAt` / `updatedAt`），可为 `null`。
+- **清空 / 重置**：`🧠 记忆 → 清空记忆`（或 `POST {action:'clearMemory'}`）只清事件、事实和建议线程，
+  便签全都保留；要连便签一起重置，删除 `~/.dsh-sticker-todo/todos.json` 即可。
 
 ## 目录结构
 
@@ -139,7 +155,7 @@ dsh-to-do/
 ├── locale/{zh,en}.json # 插件管理器里的标题与描述
 ├── icon.svg            # 插件图标
 ├── verify/             # 离线清单 / 离线 Host 集成 / 客户端渲染 / 线上 HTTP 冒烟
-├── docs/               # README 预览截图
+├── docs/               # README 预览截图 + MEMORY.md（记忆设计说明）
 ├── CONTRACT.md         # Host ↔ Client 的共享契约（改代码前先看）
 └── HANDOFF.md          # 维护者交接说明
 ```
@@ -166,22 +182,31 @@ Browser (client.js)                      Host (index.js)
 | 排程 | `POST {action:'aiPlan'}` | 本地调度器，`source: "fallback"` |
 | 分类打标签 | `POST {action:'aiTag'}` | 本地关键词分类器，`source: "fallback"` |
 | 单条便签建议 | `POST {action:'aiNoteAdvice'}` | 本地建议文本，`source: "fallback"`，不提问 |
+| 本周复盘 | `POST {action:'review'}` | 从事件流推导的确定性复盘，`source: "fallback"` |
+| 记忆候选 | `POST {action:'memoryCandidates'}` | 只按可核对模式生成（改期 ≥ 3 次、同一标签 ≥ 3 张、长期逾期），从不落盘 |
 
 单条建议最多 3 轮提问；第 4 轮模型还想提问时会被 Host 拒绝并直接给建议。问题必带 2–4 个选项，
-没有有效选项的问题会被拒绝并回退成建议，因此界面不会出现空选项。
+没有有效选项的问题会被拒绝并回退成建议，因此界面不会出现空选项。模型只能通过 `memoryCandidates`
+*提议*记忆；只有用户调用 `remember`（面板里点「记住」）才会真正保存。
 
 ## Agent 集成
 
 模型可以通过 `sticker_todo` 工具操作同一块看板，动作：
-`list` · `add` · `update` · `complete` · `remove` · `clear_completed` · `plan` · `advice` · `tag`
+`list` · `add` · `update` · `complete` · `remove` · `clear_completed` · `plan` · `advice` · `tag` ·
+`remember` · `forget` · `memories` · `review`
 
-例：`帮我把这周的事安排一下`、`帮我按主题整理待办并打标签`、`把「写周报」标成完成`。
+读类结果还会回带 `memory: { facts: string[], stats }`，所以「我这周做得怎么样」一次调用就能回答。
+
+例：`帮我把这周的事安排一下`、`帮我按主题整理待办并打标签`、`把「写周报」标成完成`、
+`记住我周五下午发周报`。
 
 ## HTTP API
 
 只暴露一个 prefix 路由：`GET /dsh-todo/state` 与 `POST /dsh-todo/action`，动作包括
 `add` / `update` / `toggle` / `remove` / `clearCompleted` / `ackReminders` / `aiPlan` / `aiAdvice` /
-`aiClearPlan` / `aiTag` / `aiNoteAdvice`。完整字段与错误码见 [`CONTRACT.md`](https://github.com/kevin-qiao/dsh-todo/blob/main/CONTRACT.md)。
+`aiClearPlan` / `aiTag` / `aiNoteAdvice` / `remember` / `updateFact` / `forget` / `review` /
+`memoryCandidates` / `clearMemory`；`state` 还会返回 `memory` 块。
+完整字段与错误码见 [`CONTRACT.md`](https://github.com/kevin-qiao/dsh-todo/blob/main/CONTRACT.md)。
 
 ## 开发与验证
 
@@ -195,10 +220,11 @@ node verify/api-smoke.mjs http://127.0.0.1:55609   # 线上 HTTP 冒烟（端口
 ```
 
 四个脚本都是零依赖，只用 Node 内置模块；前两个不联网、不写仓库外文件，`api-smoke` 只操作自己创建的
-测试便签并在结束时清理（不会删除你原有的已完成便签，`aiTag` 测试后会还原原标签）。
+测试便签并在结束时清理（不会删除你原有的已完成便签，`aiTag` 测试后会还原原标签；v1.7.0 的记忆检查只
+创建一条明确标记的临时事实并在清理时 forget，绝不改动你自己的事实 / 线程 / 事件 / 便签）。
 
-当前基线（v1.5.0）：`check-static` 51 项、`host-actions` 25 项、`client-render` 41 项、`api-smoke`
-24 项，全部通过（`api-smoke` 的结果随看板数据略有浮动，某项因保护用户数据会 SKIP）。
+当前基线（v1.7.0）：`check-static` 67 项、`host-actions` 43 项、`client-render` 50 项、`api-smoke`
+27 项，全部通过（`api-smoke` 的结果随看板数据略有浮动，为保护用户数据的检查会 SKIP 而不是失败）。
 
 ## 常见问题
 
@@ -206,6 +232,8 @@ node verify/api-smoke.mjs http://127.0.0.1:55609   # 线上 HTTP 冒烟（端口
 - **提示「重启 DSH 后可用」？** 线上 Host 还是旧代码。Host 侧只在 DSH 启动时加载，重启一次即可。
 - **中文是手写体、英文是界面字体？** `Aa 字体` 的 `默认` 预设就是这样设计的；可切成 `界面字体`。
 - **想换界面语言？** 面板头部的语言按钮可以切 `中文` / `English`，`自动` 跟随 DSH。
+- **到底记了什么？** 事件历史、你确认过的偏好、周复盘数据和每条便签的教练对话；模型只能*提议*
+  事实，不能自己写。点开 `🧠 记忆` 可以查看/删除，或用「清空记忆」清掉全部历史（便签保留）。
 - **数据在哪？** `~/.dsh-sticker-todo/todos.json`，可以用行内配置 `dataFile` 改。
 
 ## 参与贡献
@@ -218,7 +246,8 @@ node verify/api-smoke.mjs http://127.0.0.1:55609   # 线上 HTTP 冒烟（端口
 
 ## 许可
 
-[MIT](https://github.com/kevin-qiao/dsh-todo/blob/main/LICENSE) © 2026 Kevin。未发布到 npm（`package.json` 里 `private: true`，防止误发布）。
+[MIT](https://github.com/kevin-qiao/dsh-todo/blob/main/LICENSE) © 2026 Kevin。已发布到 npm：
+[`dsh-sticker-todo`](https://www.npmjs.com/package/dsh-sticker-todo)。
 图标为原创绘制；插件运行于 DeepSeek Harness，Harness 本身遵循其自身许可。
 
 ---

@@ -1,14 +1,15 @@
 # 便利贴待办 · Sticker TODO — 维护者交接
 
 本仓库就是插件包 **`dsh-sticker-todo`** 的根目录（v1.6.0 起从 `@local/dsh-sticker-todo` 改名并发布到
-npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前版本 **1.6.0**。
+npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前开发版本 **1.7.0**（`package.json` / locale 已更新，
+npm 上仍是最新的 1.6.0，1.7.0 待发布）。
 
 ## 发布到 npm
 
 - npm 包名：`dsh-sticker-todo`（unscoped）；`package.json` 已去掉 `private`，保留
   `publishConfig.access: public`；`files` 只打包运行所需文件（README 两份 + LICENSE 由 npm 自动带上）。
-- **状态：已发布 `dsh-sticker-todo@1.6.0`（2026-11-06，首次 npm 发布）**，`latest` 已指向 1.6.0，
-  tarball shasum 与本地 `npm pack` 一致（`57efe61f…`）；`v1.6.0` tag 与 GitHub Release 已建。
+- **状态：`dsh-sticker-todo@1.6.0`（2026-11-06，首次 npm 发布）已上线**，`latest` 指向 1.6.0；
+  `v1.6.0` tag 与 GitHub Release 已建。当前仓库开发版本 1.7.0 尚未发布，发版时 `latest` 才会刷新。
 - 后续发版流程：改 `package.json` 版本（并同步 README 版本徽章 / CHANGELOG）→
   `npm publish --otp=<6 位验证码>` → `npm view dsh-sticker-todo version` 确认 → 打 tag / Release。
   DSH 插件中心与 dsh-plugin.org 会在下一轮扫描自动刷新。
@@ -61,23 +62,25 @@ npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前版本 **1.6.
 
 | 文件 | 作用 |
 |---|---|
-| `index.js` | Host 入口：store、`sticker_todo` 工具、`/dsh-todo` HTTP API |
-| `lib/store.js` | JSON 存储、校验（含 `tags`）、排序、到期提醒筛选 |
-| `lib/ai.js` | 模型排程、标签分类、单条便签建议（含可选项）+ 本地确定性兜底 |
-| `lib/tools.js` | 模型可见的 `sticker_todo` 工具（含 `tag`/`advice` 动作） |
-| `client.js` | 浏览器半边：侧栏图标、新建/编辑弹窗、便签画板、分组/筛选、字体、语言切换、AI 建议、动效 |
+| `index.js` | Host 入口：store、`sticker_todo` 工具、`/dsh-todo` HTTP API（含 6 个记忆动作） |
+| `lib/store.js` | v2 JSON 文档（便签 + 事件流 + 事实 + 建议线程）、校验、排序、提醒筛选、派生统计 |
+| `lib/ai.js` | 模型排程、标签分类、单条便签建议、周复盘、记忆候选 + 本地确定性兜底 + 记忆 prompt 块 |
+| `lib/tools.js` | 模型可见的 `sticker_todo` 工具（含 `tag`/`advice`/`remember`/`forget`/`memories`/`review`） |
+| `client.js` | 浏览器半边：侧栏图标、新建/编辑弹窗、便签画板、分组/筛选、字体、语言切换、AI 建议、记忆抽屉、改期徽章、动效 |
 | `cordis.patch.yml` | 插入 `sticker-todo` 行的 bundle patch（name = `dsh-sticker-todo`） |
-| `locale/en.json`, `locale/zh.json` | 插件管理里的标题与描述（中英双语） |
+| `locale/en.json`, `locale/zh.json` | 插件管理里的标题与描述（中英双语，已提到 1.7.0 的记忆） |
 | `icon.svg` | 插件图标（原始绘制） |
 | `verify/` | 离线清单 / 离线 Host 集成 / 客户端渲染冒烟 / 线上 HTTP 冒烟 |
-| `CONTRACT.md` | Host/Client 之间的 API 契约（改造时先看这个） |
+| `CONTRACT.md` | Host/Client 之间的 API 契约（改造时先看这个；Round 7 = v1.7.0 记忆） |
+| `docs/MEMORY.md` | 记忆功能设计说明：为什么加、四层记忆、红线（模型只读不写）、数据模型、流、迁移 |
 | `README.md` / `README.zh-CN.md` | 英文 / 中文项目说明（GitHub 风格，互链） |
 
 ## 架构要点
 
 - **数据路径**：浏览器半边不直接碰 Host 状态，两边通过一个 prefix 路由 `/dsh-todo` 通信：
   `GET /dsh-todo/state` 读，`POST /dsh-todo/action` 写（`add` / `update` / `toggle` / `remove` /
-  `clearCompleted` / `ackReminders` / `aiPlan` / `aiAdvice` / `aiClearPlan` / `aiTag` / `aiNoteAdvice`）。
+  `clearCompleted` / `ackReminders` / `aiPlan` / `aiAdvice` / `aiClearPlan` / `aiTag` / `aiNoteAdvice`，
+  v1.7.0 起再加 `remember` / `updateFact` / `forget` / `review` / `memoryCandidates` / `clearMemory`）。
 - **同一份操作**：面板按钮、HTTP 路由、`sticker_todo` 工具都走 `index.js` 里同一个 `runAction`。
 - **全局 AI 建议已从面板移除**（v1.3.0）：AI 卡片只剩「自动安排日程 / 分类打标签 / 清除安排」；
   后端 `aiAdvice` 与工具 `advice` 仍保留给 agent。
@@ -96,6 +99,7 @@ npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前版本 **1.6.
   失败/超时/未配置模型时降级为本地启发式并标 `source: "fallback"`。
 - **单条建议对话**：前端带 `history`（最多 3 轮）调用 `aiNoteAdvice`；question 必带 2–4 个选项
   （无有效选项会被 Host 拒绝并回退成建议），advice 可带 0–3 个备选做法；`round` 始终等于 `history.length`。
+  v1.7.0 起 Host 会把这次 `history` 和 advice 存进 `memory.threads[id]`，重新打开时直接续上。
 
 ## v1.4.0 改动（对应用户的「改成双语」）
 
@@ -121,14 +125,63 @@ npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前版本 **1.6.
 4. **动效/i18n**：行入场错峰淡入 + `stk-expand` 展开、箭头旋转，reduced-motion 全关；新增 7 个 i18n 键
    （`view.label/notes/list/hint`、`list.expand/collapse/details`），字典 131 键、中英键集一致。
 
+## v1.7.0 记忆（数据模型 / 清空 / 重置）
+
+> 设计动机与边界见 [`docs/MEMORY.md`](./docs/MEMORY.md)；契约见 `CONTRACT.md` 的
+> 「## Round 7 (v1.7.0 — 记忆 / memory)」。这里只记维护者需要动手的部分。
+
+### 数据模型（文档 v2）
+
+`~/.dsh-sticker-todo/todos.json` 从 `{ version: 1, todos }` 变成：
+
+```json
+{
+  "version": 2,
+  "todos": [ /* 形状不变 */ ],
+  "events": [ { "at": "…", "kind": "update", "id": "td_x", "text": "写周报",
+                "changes": { "dueAt": { "from": "…", "to": "…" } } } ],
+  "memory": {
+    "facts": [ { "id": "m_ab12cd34", "text": "周报固定在周五 16:00 发",
+                 "source": "user", "createdAt": "…", "updatedAt": "…" } ],
+    "threads": { "td_x": { "rounds": [ /* ≤3 轮问答 */ ],
+                           "advice": { "text": "…", "source": "model|fallback", "at": "…" },
+                           "updatedAt": "…" } }
+  }
+}
+```
+
+- 上限：事件 2000（环形丢最旧）、事实 50、线程 200（超了丢 `updatedAt` 最旧）、每便签问答 3 轮。
+- `postpones` / 周统计 / `averageOpenAgeDays` / `lastAdvice` 都是**读时派生**，不落盘，可随时从事件流重算。
+- 删便签：事件保留、线程删除；`clearCompleted` 同理。只有 `clearMemory` 会清历史。
+- 模型只读记忆：唯一由模型产出的是 `memoryCandidates` 的**提议**，必须用户 `remember` 才落盘。
+- v1 → v2 迁移：读 v1 文件时补空 `events` / `memory`，下一次写入升到 2；旧插件读 v2 只取 `todos`，
+  所以降级安装不会丢便签。
+
+### 如何清空 / 重置
+
+- **只清记忆、保留便签**：面板 `🧠 记忆 → 清空记忆`（两步确认），或
+  `POST /dsh-todo/action {"action":"clearMemory"}` → `{cleared:{facts,threads,events}}`。
+- **只删一条事实**：面板该条的 ✕，或 `{"action":"forget","id":"m_…"}`。
+- **全部重置（连便签）**：退出 DSH 后删除 `~/.dsh-sticker-todo/todos.json`（或用 `dataFile` 指定的文件），
+  重启后从空文档开始；卸载插件时删整个 `~/.dsh-sticker-todo/` 目录即可。
+- 事件日志目前没有单独清空的动作（`clearMemory` 会一起清）；不要手工改文件的 `events`，否则派生统计
+  会跟着变。
+
+### 排障
+
+- 面板没有 `🧠 记忆` 按钮 / 看不到 `改期 N 次`：浏览器端是旧 bundle 或 Host 是旧代码。Host 侧新动作
+  在旧进程里会回 `unknown_action`，重启 DSH（Host）并刷新页面（client）。
+- 记忆抽屉里「本周复盘」「发现记忆」报错：模型不可用时**不应**报错（有本地兜底）；若报错先看
+  `/dsh-todo/action review` 是否返回 `ok:true`，以及日志里的 `sticker-todo:` 行。
+
 ## 改完之后
 
 ```bash
-node verify/check-static.mjs      # 51 项：清单、patch、locale、icon、语法
-node verify/host-actions.mjs      # 25 项离线 Host 集成：HTTP handler、tags、aiTag、aiNoteAdvice（含选项/脚本化模型）、工具
-node verify/client-render.mjs     # 41 项客户端渲染冒烟：分组/弹窗/字体/AI 建议/动效/语言/双视图/旧 Host 兼容
+node verify/check-static.mjs      # 67 项：清单（含 1.7.0 / 零依赖）、patch、locale、icon、记忆标识、语法
+node verify/host-actions.mjs      # 43 项离线 Host 集成：HTTP handler、tags、AI、记忆（事件/改期/事实/线程/复盘/候选/迁移）、工具
+node verify/client-render.mjs     # 50 项客户端渲染冒烟：分组/弹窗/字体/AI 建议/动效/语言/双视图/记忆抽屉/改期徽章/旧 Host
 node verify/api-smoke.mjs        # 线上行为（默认 http://127.0.0.1:55609，实际端口会变，传参或设 DSH_WEB_URL）
-node verify/api-smoke.mjs http://127.0.0.1:57364
+node verify/api-smoke.mjs http://127.0.0.1:65441
 ```
 
 - 只改 `client.js`：浏览器刷新页面即可（bundle 是链接安装，不需要重新打包）；开了客户端 HMR 时可能自动热载。
@@ -149,5 +202,13 @@ node verify/api-smoke.mjs http://127.0.0.1:57364
 （双视图：默认便利贴、极简标题列表 + 到期标记、展开详情/操作且单开、持久化与存储失败回退、
 筛选/排序、从列表打开编辑与 AI 建议弹窗）；全部 `node --check` 通过；线上 `api-smoke` 24/24。
 
-未验证：浏览器里的最终视觉手感（动效、明暗主题、弹窗、纸面质感、极简列表间距）、桌面通知授权弹窗；
-侧栏标签在语言切换后的即时重绘（依赖 host 下一次渲染，面板/提醒卡/通知是即时的）。
+已验证（v1.7.0，离线 + 线上）：`check-static` **67/67**、`host-actions` **43/43**、
+`client-render` **50/50**（记忆：事件记录与改期计数、事实 CRUD/去重/50 条上限、线程持久化与删除便签、
+复盘/记忆候选的 fallback 形状与「不写盘」、v1 文档迁移、工具 4 个记忆动作；记忆抽屉中英双语、
+六格复盘统计、候选记住/忽略、改期 ≥2 徽章（两种视图）、教练线程续聊、旧 Host 无 `memory` 不崩、
+清空记忆两步确认）；线上 `api-smoke` **27/27**（`state.memory`、临时事实 remember/updateFact/forget、
+review/memoryCandidates 只读且状态不变；临时事实在清理阶段也会被 forget）。
+
+未验证：浏览器里的最终视觉手感（动效、明暗主题、弹窗、记忆抽屉布局、纸面质感、极简列表间距）、
+桌面通知授权弹窗；侧栏标签在语言切换后的即时重绘（依赖 host 下一次渲染，面板/提醒卡/通知是即时的）；
+记忆上限（2000 事件 / 50 事实 / 200 线程）只做了 50 事实的边界验证。

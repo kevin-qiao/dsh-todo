@@ -376,4 +376,244 @@ Pure exports for the offline tests:
   (`invalid_input` otherwise);
 - the action calls `ai.noteAdvice(todo, history)` and returns its result unchanged.
 
+## Round 7 (v1.7.0 — 记忆 / memory)
+
+The plugin starts remembering. Three additions, all inside the existing local JSON document:
+
+1. **Event log** — every mutation appends a compact event, so a note's history survives its own
+   deletion and can be summarised.
+2. **Memory facts** — short user-owned statements (preferences, routines) injected into the AI prompts.
+3. **Advice threads** — the per-note advisory conversation and the last advice are persisted, so the
+   coach resumes instead of starting over.
+
+Hard rule for every implementation: **only the user writes memory.** The model may *propose* a fact
+through `memoryCandidates`; the Host never stores a proposal until the user confirms it via `remember`.
+
+### File ownership (round 7)
+
+| File | Owner |
+|---|---|
+| `CONTRACT.md`, `docs/MEMORY.md`, `package.json`, `locale/*.json`, `lib/store.js`, `index.js`, `lib/tools.js` | lead |
+| `lib/ai.js` | host-ai |
+| `client.js` | ui-panel |
+| `verify/*.mjs`, `CHANGELOG.md`, `README*.md`, `HANDOFF.md` | verifier |
+
+### Persisted document v2
+
+`~/.dsh-sticker-todo/todos.json` becomes:
+
+```json
+{
+  "version": 2,
+  "todos": [ /* unchanged Todo[] */ ],
+  "events": [ /* Event[], oldest first, at most 2000 */ ],
+  "memory": {
+    "facts": [ /* Fact[], at most 50 */ ],
+    "threads": { "td_x": { /* Thread */ } }
+  }
+}
+```
+
+Read rules: a v1 document (no `events` / `memory`) loads as `events: []`, `facts: []`,
+`threads: {}`; missing or malformed members are dropped, never thrown (`store.js` keeps its current
+tolerance). Every write bumps `version` to 2 and rewrites the whole document atomically, exactly as
+today. `clearMemory` is the only action that removes history.
+
+**Event**
+
+```json
+{
+  "at": "2026-11-06T14:00:00.000Z",
+  "kind": "update",
+  "id": "td_x",
+  "text": "写周报",
+  "changes": { "dueAt": { "from": "2026-11-06T02:00:00.000Z", "to": "2026-11-07T02:00:00.000Z" } }
+}
+```
+
+`kind` ∈ `create | update | done | reopen | remove | plan | tag | remind | clear`.
+`id` + `text` are present on every note-scoped event (`text` = the note title at that moment, ≤ 500
+chars, so a removed note stays readable in a review); `plan` / `tag` / `clear` are board-scoped and
+carry `count` instead. `changes` exists only on `update`, only for fields that actually changed
+(`dueAt`, `remindAt`, `priority`, `tags`, `text`), each `{ "from": <old>, "to": <new> }`. The log is a
+ring: appending past 2000 drops the oldest event.
+
+**Fact**
+
+```json
+{
+  "id": "m_ab12cd34",
+  "text": "周报固定在周五 16:00 发",
+  "source": "user",
+  "createdAt": "2026-11-06T14:00:00.000Z",
+  "updatedAt": "2026-11-06T14:00:00.000Z"
+}
+```
+
+`text` is trimmed, 1–120 characters; `id` is `m_` + 8 hex characters; `source` is `user` (the only
+value the Host writes today — the field exists so a later version can mark model-confirmed facts).
+At most 50 facts. A second fact whose text equals an existing one after trim + lower-casing is
+rejected with `invalid_input` ("already remembered") instead of being silently duplicated.
+
+**Thread**
+
+```json
+"threads": {
+  "td_x": {
+    "rounds": [ { "round": 1, "question": "卡在哪一步？", "answer": "缺资料", "at": "2026-11-06T14:00:00.000Z" } ],
+    "advice": { "text": "先花 20 分钟…", "source": "model", "at": "2026-11-06T14:05:00.000Z" },
+    "updatedAt": "2026-11-06T14:05:00.000Z"
+  }
+}
+```
+
+`rounds` is the Q&A history (≤ 3 entries, `question` ≤ 120 chars, `answer` ≤ 800 chars), `advice` is
+the last advice returned for that note (`null` until the first one). At most 200 threads; when the
+cap is reached the thread with the oldest `updatedAt` is dropped. `remove` / `clearCompleted` delete
+the note's thread but keep its events.
+
+### Derived values (computed on read, never persisted)
+
+- `postpones[id]` — number of `update` events whose `changes.dueAt` has both `from` and `to`
+  non-null and `to > from`. Setting a first deadline, or moving it earlier, is **not** a postponement.
+- `stats.week` — trailing 7 days (`now` − 7 d, machine-local clock): `completed` = `done` events,
+  `created` = `create` events, `postponed` = the updates counted above, `removed` = `remove` events.
+- `stats` also carries `open`, `done`, `overdue` (same counts the tool already reports) and
+  `averageOpenAgeDays`.
+- `lastAdvice[id]` = `threads[id].advice`.
+
+### GET /dsh-todo/state — memory block
+
+The response gains one top-level member beside `todos` / `dueReminders` / `ai`:
+
+```json
+"memory": {
+  "facts": [ /* Fact[], newest first */ ],
+  "stats": {
+    "open": 5, "done": 12, "overdue": 1, "averageOpenAgeDays": 2.4,
+    "week": { "completed": 8, "created": 6, "postponed": 3, "removed": 2 }
+  },
+  "postpones": { "td_x": 3 },
+  "threads": { "td_x": { /* Thread */ } }
+}
+```
+
+`postpones` lists only notes with at least one postponement; `threads` only notes that still exist.
+The `Todo` shape itself does not change — clients read memory from this sibling object.
+
+### POST /dsh-todo/action — new actions
+
+| action | params | result |
+|---|---|---|
+| `remember` | `text` (required, ≤ 120) | the created Fact |
+| `updateFact` | `id` (required), `text` (required) | the updated Fact |
+| `forget` | `id` (required) | `{ "forgotten": "<id>" }` |
+| `review` | — | `{ "review": ReviewResult }` — no write |
+| `memoryCandidates` | — | `{ "candidates": Candidate[], "generatedAt": "…", "source": "model" \| "fallback" }` — no write |
+| `clearMemory` | — | `{ "cleared": { "facts": n, "threads": n, "events": n } }` |
+
+`aiNoteAdvice` keeps its request/response but now also writes the thread: after the call the Host
+stores the submitted `history` as `rounds` and, for `kind: "advice"`, the returned text + its
+`source` as `advice`. A failed write is logged, never surfaced.
+
+`ReviewResult`
+
+```json
+{
+  "headline": "这周做完 8 件，改期 3 次",
+  "range": { "from": "2026-10-31T…", "to": "2026-11-06T…", "days": 7 },
+  "stats": { "completed": 8, "created": 6, "postponed": 3, "removed": 2, "open": 5, "overdue": 1 },
+  "highlights": [ "「写周报」这周改期 2 次，建议拆成两步" ],
+  "tips": [ { "text": "把改期最多的一件砍成 3 个小步", "kind": "breakdown" } ],
+  "generatedAt": "2026-11-06T14:20:00.000Z",
+  "source": "model"
+}
+```
+
+`headline` ≤ 100 chars, `highlights` ≤ 4 (each ≤ 120 chars), `tips` ≤ 3 (`kind` as in
+`AdviceResult`). `source: "fallback"` whenever the model was unavailable or its output did not
+survive `normalizeReview`; the fallback is deterministic and derived only from events + todos.
+
+`Candidate`
+
+```json
+{ "text": "周报固定在周五下午", "reason": "最近 3 张便签都提到周五交周报" }
+```
+
+≤ 5 candidates, `text` ≤ 60 chars, `reason` ≤ 80 chars, both trimmed and non-empty. The model only
+proposes; **nothing is written** until the user calls `remember` with one of the texts. The fallback
+derives candidates from measurable patterns only (postpone ≥ 3, ≥ 3 notes sharing a tag, chronic
+overdue) and reports `source: "fallback"`.
+
+### AiLayer v1.7.0 (`lib/ai.js`)
+
+```js
+available(): { available: boolean, reason: string | null }
+async plan(todos, memory?)              // PlanResult
+async advice(todos, memory?)            // AdviceResult
+async tag(todos, memory?)               // TagResult
+async noteAdvice(todo, history?, memory?) // NoteAdviceResult
+async review(input)                     // ReviewResult
+async memoryCandidates(input)           // { candidates, generatedAt, source }
+```
+
+`memory` is the compact context built by `index.js`:
+
+```json
+{
+  "facts": ["周报固定在周五下午"],
+  "stats": { "open": 5, "done": 12, "overdue": 1, "averageOpenAgeDays": 2.4,
+             "week": { "completed": 8, "created": 6, "postponed": 3, "removed": 2 } },
+  "postpones": { "td_x": 3 },
+  "lastAdvice": { "td_x": "先花 20 分钟写出开头两段" }
+}
+```
+
+`review(input)` and `memoryCandidates(input)` take `{ todos, events, facts, now? }` and reuse the
+existing `resolveTarget` / `callModel` / timeout / fallback plumbing: never throw,
+`source: "fallback"` on any failure.
+
+Every prompt gains one compact memory block (pure helper `memoryPromptBlock(memory)` returning a
+short Chinese text, `''` when there is nothing to say):
+
+- facts, at most 12 (each ≤ 120 chars; when there are more, keep the most recently updated);
+- one weekly-statistics line (完成 / 新建 / 改期 / 删除);
+- a note's payload gains `postpones` (a count) when it has been postponed at least once;
+- the per-note coach prompt additionally carries `lastAdvice` (≤ 200 chars) and is told **not to
+  repeat the previous suggestion**;
+- the tagging prompt may mention tag words that appear in the facts (advisory only).
+
+No prompt ever asks the model to *write* memory; the only model-produced memory-adjacent output is
+`memoryCandidates`, which the user confirms.
+
+Pure exports for the offline tests: `memoryPromptBlock(memory)`, `heuristicReview(input)`,
+`normalizeReview(raw, input)`, `heuristicMemoryCandidates(input)`,
+`normalizeMemoryCandidates(raw, input)`.
+
+### `sticker_todo` tool v1.7.0
+
+New actions: `remember` (needs `text`), `forget` (needs `id`), `memories` (list facts without
+changing anything), `review` (weekly review, no write). `list` (and the other read results) gain
+`memory: { facts: string[], stats: { ... } }` so the agent can answer "我这周做得怎么样" without a
+second call. `plan` / `advice` / `tag` pass the memory context through, exactly like the HTTP route.
+
+### Client half (client.js)
+
+- **Header `记忆` button** (zh `记忆` / en `Memory`) opens one modal dialog with three sections plus
+  a 清空记忆 action (two-step confirm, same 3.5 s window as delete):
+  - **我的偏好** — facts list (text + 编辑 + 删除), one input + 记住 to add, inline error when the
+    Host rejects a duplicate / too-long fact;
+  - **本周复盘** — a 生成复盘 button that POSTs `review`, then renders headline, six stat chips
+    (完成 / 新建 / 改期 / 删除 / 未完成 / 逾期), highlights, tips and a 模型 / 本地 source badge;
+  - **可能值得记住** — a 发现记忆 button that POSTs `memoryCandidates` and renders each candidate
+    (text + reason) with 记住 / 忽略 (dismiss is client-side only).
+- **Note card / list row** shows `改期 N 次` when `memory.postpones[id] >= 2` — a small chip obeying
+  the same artwork rules as the other chips; in minimal mode it lives in the expanded meta row.
+- **Per-note advice dialog** seeds itself from `memory.threads[id]`: when a stored last advice
+  exists it is shown with the usual 追加到备注 / 关闭 actions plus a `继续聊聊` button that
+  re-requests with the stored rounds as `history`. A fresh conversation keeps the three-round
+  behaviour unchanged.
+- Every new string goes into the existing `TEXT` dictionaries in **both** languages; `data.memory`
+  must be tolerated when absent (older Host): no badge, empty memory dialog, no crash.
+
 

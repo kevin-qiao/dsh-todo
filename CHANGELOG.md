@@ -6,6 +6,60 @@ All notable changes to this plugin are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.7.0] — 2026-11-06
+
+### Added
+- **Memory** — the board now remembers instead of only holding current state:
+  - **Event log** — every mutation appends a compact event (`create` / `update` / `done` / `reopen` /
+    `remove` / `plan` / `tag` / `remind` / `clear`) carrying the note title, so a deleted note stays
+    readable in a review. `update` events record `{ from, to }` for `dueAt` / `remindAt` / `priority` /
+    `tags` / `text`. The log is a 2000-event ring.
+  - **Facts** — up to 50 short user-owned preferences (1–120 characters), injected into every AI
+    prompt (at most 12 per prompt, newest first); duplicates are rejected case-insensitively.
+  - **Weekly review** — trailing-7-day completed / created / postponed / removed counts plus the
+    current open / overdue state, rendered as a headline with highlights and tips. Reads only, never
+    writes.
+  - **Persisted advice threads** — each note's coaching Q&A (up to 3 rounds) and the last advice
+    survive restarts; the advice dialog resumes with `继续聊聊` instead of starting over.
+- Panel `🧠 记忆` dialog with 我的偏好 (add / edit / delete facts), 本周复盘 (generate a review with six
+  stat chips and a model / local source badge) and 可能值得记住 (AI-proposed facts with 记住 / 忽略 —
+  proposals are never stored until confirmed) plus a two-step 清空记忆 action.
+- `改期 N 次` chip on notes whose deadline was pushed later at least twice (both views).
+- Agent tool actions `remember` / `forget` / `memories` / `review`; every read result now echoes
+  `memory: { facts, stats }` so the agent can answer “how did my week go” in one call.
+- [`docs/MEMORY.md`](./docs/MEMORY.md) — why the memory exists, its four layers, what is explicitly
+  out of scope, and the acceptance checks.
+
+### Changed
+- The persisted document is now **v2** (`version: 2` plus `events` and `memory.facts` / `memory.threads`);
+  a v1 document loads unchanged with empty memory and is upgraded on the next write. The `Todo` shape
+  itself is unchanged.
+- AI prompts gain a compact memory block (facts + one weekly-statistics line); the per-note coach is
+  also given the last advice for that note and told not to repeat it.
+- Derived values (`postpones`, weekly statistics, `averageOpenAgeDays`, `lastAdvice`) are computed on
+  read and never persisted, so they can always be recomputed from the event log.
+- Removing a note keeps its events but drops its advice thread; `clearMemory` is the only action that
+  deletes history, and it never touches the notes.
+
+### API
+- Six new actions on `POST /dsh-todo/action`: `remember`, `updateFact`, `forget`, `review`,
+  `memoryCandidates`, `clearMemory`.
+- `GET /dsh-todo/state` gains a top-level `memory` member: `{ facts, stats, postpones, threads }`.
+- AiLayer v1.7.0: new `review(input)` / `memoryCandidates(input)` methods; `plan` / `advice` / `tag` /
+  `noteAdvice` accept the optional compact `memory` context. Pure helpers exported for the offline
+  suites: `memoryPromptBlock`, `heuristicReview`, `normalizeReview`, `heuristicMemoryCandidates`,
+  `normalizeMemoryCandidates`.
+- `sticker_todo` tool: new `remember` / `forget` / `memories` / `review` actions, and every read result
+  gains `memory: { facts: string[], stats }`.
+
+### Docs
+- README (English and 中文) adds the memory feature, the `记忆` dialog usage, the v2 data model and the
+  new verification baselines; HANDOFF gains the memory data model / clear / reset notes.
+- [`docs/MEMORY.md`](./docs/MEMORY.md) documents why the memory exists, its scope, the data model and
+  the acceptance checks.
+- Verification baselines (offline): `check-static` 67, `host-actions` 43, `client-render` 50 — all
+  passing; `api-smoke` covers the live memory round-trips (27 checks).
+
 ## [1.6.0] — 2026-11-06
 
 ### Changed

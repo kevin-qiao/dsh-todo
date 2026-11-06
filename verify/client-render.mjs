@@ -21,7 +21,11 @@
  *     locales, persistence/restore and storage-failure fallback
  *   - v1.5.0 dual view: 便利贴 board (default) / 极简 title-only list with click-to-expand
  *     details, persisted view choice, one expanded row
- *   - legacy Host rows without `tags` and old-Host `unknown_action` handling
+ *   - v1.7.0 memory: header 记忆/Memory dialog (facts list, weekly review with six stat
+ *     chips, AI candidate proposals), the 改期 N 次 badge at >= 2 postponements, and the
+ *     per-note advice dialog resuming a persisted `memory.threads` conversation
+ *   - legacy Host rows without `tags` / without `data.memory` and old-Host `unknown_action`
+ *     handling
  *
  * Usage: node verify/client-render.mjs
  * Node built-ins only; writes no files and performs no network access.
@@ -228,6 +232,17 @@ const STATE = {
   view: 19,
   viewMenuOpen: 20,
   expandedId: 21,
+  // v1.7.0 memory dialog state (hook order: client.js declares these after expandedId)
+  memoryOpen: 22,
+  memoryClosing: 23,
+  factsDraft: 24,
+  factsEditingId: 25,
+  factsEditDraft: 26,
+  memoryError: 27,
+  memoryBusy: 28,
+  memoryReview: 29,
+  memoryCandidates: 30,
+  memoryArmClear: 31,
 };
 
 const BASE_DRAFT = { text: '', note: '', dueAt: '', remindAt: '', color: 'yellow', priority: 2, tags: '' };
@@ -356,6 +371,52 @@ const TAGGED_SNAPSHOT = { now: NOW, todos: TAGGED_TODOS, dueReminders: [], ai: {
 const LEGACY_TODOS = TAGGED_TODOS.map(({ tags, ...rest }) => rest);
 const LEGACY_SNAPSHOT = { now: NOW, todos: LEGACY_TODOS, dueReminders: [], ai: { available: true, reason: null } };
 
+/* ---------------- v1.7.0 memory fixture ---------------- */
+
+const MEMORY_THREAD = {
+  rounds: [{ round: 1, question: '这一步卡在哪？', answer: '缺资料', at: '2026-11-04T09:00:00.000Z' }],
+  advice: { text: '先花 20 分钟写出开头两段', source: 'model', at: '2026-11-04T09:05:00.000Z' },
+  updatedAt: '2026-11-04T09:05:00.000Z',
+};
+
+const MEMORY_BLOCK = (overrides = {}) => ({
+  facts: [
+    { id: 'm_ab12cd34', text: '周报固定在周五下午发', source: 'user', createdAt: NOW, updatedAt: NOW },
+    { id: 'm_ef56gh78', text: '每天先做最重要的一件', source: 'user', createdAt: NOW, updatedAt: NOW },
+  ],
+  stats: { open: 3, done: 2, overdue: 1, averageOpenAgeDays: 1.5, week: { completed: 4, created: 5, postponed: 2, removed: 1 } },
+  postpones: { td_1: 3, td_2: 1 },
+  threads: { td_1: MEMORY_THREAD },
+  ...overrides,
+});
+
+const MEMORY_SNAPSHOT = {
+  now: NOW,
+  todos: TAGGED_TODOS,
+  dueReminders: [],
+  ai: { available: true, reason: null },
+  memory: MEMORY_BLOCK(),
+};
+
+const REVIEW_FIXTURE = {
+  headline: '这周做完 4 件，改期 2 次',
+  range: { from: '2026-10-30T00:00:00.000Z', to: NOW, days: 7 },
+  stats: { completed: 4, created: 5, postponed: 2, removed: 1, open: 3, overdue: 1 },
+  highlights: ['「写周报」这周改期 2 次，建议拆成两步'],
+  tips: [{ text: '把改期最多的一件砍成 3 个小步', kind: 'breakdown' }],
+  generatedAt: NOW,
+  source: 'fallback',
+};
+
+const CANDIDATE_FIXTURE = [
+  { text: '「周报」相关的事比较多', reason: '3 张未完成便签都带着「周报」标签' },
+  { text: '「写周报」这件事容易一拖再拖', reason: '最近有 3 次把它的截止时间往后推' },
+];
+
+const zhDict = () => dictionaries.stickerTodo.zh;
+const enDict = () => dictionaries.stickerTodo.en;
+
+
 /** Independent implementation of the contract's quick-due rule, used to check the UI value. */
 function expectedQuickDue(kind) {
   const date = new Date();
@@ -432,6 +493,10 @@ async function main() {
       'view.label', 'view.notes', 'view.list', 'view.hint',
       'list.expand', 'list.collapse', 'list.details',
       'ai.needRestart',
+      'memory.button', 'memory.title', 'memory.factsTitle', 'memory.reviewTitle',
+      'memory.candidatesTitle', 'memory.clear', 'memory.postponeTimes', 'memory.continueThread',
+      'memory.stats.completed', 'memory.stats.created', 'memory.stats.postponed',
+      'memory.stats.removed', 'memory.stats.open', 'memory.stats.overdue',
     ]) {
       assert(typeof dictionary.zh[key] === 'string' && dictionary.zh[key] !== '', `zh missing ${key}`);
       assert(typeof dictionary.en[key] === 'string' && dictionary.en[key] !== '', `en missing ${key}`);
@@ -454,7 +519,8 @@ async function main() {
       '.stk-modal-layer{position:fixed', '.stk-modal{', '.stk-field-textarea',
       '.stk-note-priority{', '.stk-board-group', 'font-family:var(--stk-note-font',
       '--stk-note-font:', '.stk-chip--option', '.stk-lang-menu', '.stk-view-menu',
-      '.stk-list-item{', '.stk-list-row{', '.stk-list-details{', '.stk-list-due',
+      '.stk-list-item{', '.stk-list-row{', '.stk-list-details{', '.stk-list-due{',
+      '.stk-modal--memory', '.stk-memory-section', '.stk-memory-stat', '.stk-chip--postpone',
     ]) {
       assertIncludes(css, needle, `stylesheet missing ${needle}`);
     }
@@ -976,6 +1042,333 @@ async function main() {
     assert(hooks[STATE.adviceDialog] !== null && hooks[STATE.adviceDialog].closing === true, 'close should start the exit animation');
     await flushClose();
     assert(hooks[STATE.adviceDialog] === null, 'close should dismiss the advice dialog');
+  });
+
+  /* ---------------- v1.7.0 memory ---------------- */
+  const memorySection = (tree, label) => nodesWithClass(tree, 'stk-memory-section')
+    .find((node) => node.props['aria-label'] === label);
+  const cardOf = (tree, id) => nodesWithClass(tree, 'stk-note')
+    .find((node) => node.props['data-id'] === id);
+  /** The 建议 (AI advice) action of one note card, scoped to that card. */
+  const noteAdviceButton = (tree, id) => {
+    const card = cardOf(tree, id);
+    return card
+      ? flatten(card).find((node) => node.type === 'button' && node.props['aria-label'] === zhDict()['note.advice'])
+      : undefined;
+  };
+
+  await check('memory: header 记忆 button opens the three-section dialog with facts', () => {
+    const zh = zhDict();
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'zh' }));
+    let tree = renderTree();
+    assert(nodesWithClass(tree, 'stk-modal--memory').length === 0, 'memory dialog must start closed');
+    const memoryButton = flatten(tree).find((node) => node.type === 'button' && node.props['aria-label'] === zh['memory.button']);
+    assert(memoryButton, 'header 记忆 button missing');
+    memoryButton.props.onClick();
+    assert(hooks[STATE.memoryOpen] === true, 'clicking 记忆 should open the dialog');
+    tree = renderTree();
+    const modal = nodesWithClass(tree, 'stk-modal--memory')[0];
+    assert(modal && modal.props.role === 'dialog' && modal.props['aria-modal'] === 'true', 'memory dialog semantics missing');
+    assert(modal.props['aria-label'] === zh['memory.title'], `memory dialog label mismatch: ${JSON.stringify(modal.props['aria-label'])}`);
+    const sections = nodesWithClass(tree, 'stk-memory-section');
+    assert(sections.length === 3, `expected three memory sections, got ${sections.length}`);
+    const labels = sections.map((section) => section.props['aria-label']);
+    assert(
+      labels.includes(zh['memory.factsTitle']) && labels.includes(zh['memory.reviewTitle']) && labels.includes(zh['memory.candidatesTitle']),
+      `section labels mismatch: ${JSON.stringify(labels)}`,
+    );
+    const factSection = memorySection(tree, zh['memory.factsTitle']);
+    const factTexts = nodesWithClass(factSection, 'stk-memory-text').map((node) => textsOf(node.children).join(''));
+    assert(factTexts.includes('周报固定在周五下午发') && factTexts.includes('每天先做最重要的一件'), `fact list mismatch: ${JSON.stringify(factTexts)}`);
+    assert(textsOf(nodesWithClass(factSection, 'stk-memory-section-count')[0].children).join('') === '2', 'fact count badge mismatch');
+    assert(findText(tree, zh['memory.hint']), 'memory hint missing');
+    assert(findText(tree, zh['memory.clear']), '清空记忆 button missing');
+    assert(findText(tree, zh['memory.reviewHint']), 'the not-yet-generated review hint missing');
+    assert(findText(tree, zh['memory.candidatesHint']), 'the not-yet-discovered candidates hint missing');
+    const form = nodesWithClass(tree, 'stk-memory-form')[0];
+    const rememberButton = flatten(form).find((node) => node.type === 'button');
+    assert(rememberButton && rememberButton.props.disabled === true, '记住 should stay disabled while the draft is empty');
+  });
+
+  await check('memory: the dialog and its sections render in English too', () => {
+    const en = enDict();
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'en', memoryOpen: true }));
+    const tree = renderTree();
+    const sections = nodesWithClass(tree, 'stk-memory-section');
+    assert(sections.length === 3, `expected three memory sections, got ${sections.length}`);
+    for (const label of [
+      en['memory.title'], en['memory.factsTitle'], en['memory.reviewTitle'],
+      en['memory.candidatesTitle'], en['memory.clear'], en['memory.hint'],
+    ]) {
+      assert(findText(tree, label), `English memory label missing: ${label}`);
+    }
+    assert(findText(tree, '周报固定在周五下午发'), 'facts should render their text verbatim');
+    assert(!findText(tree, zhDict()['memory.factsTitle']), 'forced English must not render the Chinese section title');
+  });
+
+  await check('memory: 记住 posts the draft; 编辑 saves updateFact; delete sends forget', async () => {
+    const en = enDict();
+    /* remember */
+    stubFetch([
+      { ok: true, data: { id: 'm_new00001', text: '周五写周报', source: 'user', createdAt: NOW, updatedAt: NOW } },
+      { ok: true, data: MEMORY_SNAPSHOT },
+    ]);
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'en', memoryOpen: true, factsDraft: '周五写周报' }));
+    let tree = renderTree();
+    const rememberButton = flatten(nodesWithClass(tree, 'stk-memory-form')[0]).find((node) => node.type === 'button');
+    assert(rememberButton.props.disabled === false, '记住 should enable once the draft is non-empty');
+    rememberButton.props.onClick();
+    await flush();
+    const posted = fetchCalls.find((call) => call.body && call.body.action === 'remember');
+    assert(posted && posted.body.text === '周五写周报', `remember body mismatch: ${JSON.stringify(posted && posted.body)}`);
+    assert(hooks[STATE.factsDraft] === '', 'the draft should clear after remembering');
+    assert(hooks[STATE.memoryBusy] === null, 'the dialog should leave the busy state');
+    assert(hooks[STATE.toast] && hooks[STATE.toast].text === en['memory.saved'], 'saved-to-memory toast missing');
+
+    /* an invalid_input keeps the dialog open with an inline error */
+    stubFetch({ ok: false, error: { code: 'invalid_input', message: '这条记忆已经记过了' } });
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'en', memoryOpen: true, factsDraft: '周报固定在周五下午发' }));
+    tree = renderTree();
+    flatten(nodesWithClass(tree, 'stk-memory-form')[0]).find((node) => node.type === 'button').props.onClick();
+    await flush();
+    assert(hooks[STATE.memoryError] === '这条记忆已经记过了', `inline memory error mismatch: ${JSON.stringify(hooks[STATE.memoryError])}`);
+    assert(nodesWithClass(renderTree(), 'stk-ai-error').length === 1, 'the inline memory error must render');
+
+    /* edit */
+    stubFetch([
+      { ok: true, data: { id: 'm_ab12cd34', text: '周报固定在周五 16:00 发', source: 'user', createdAt: NOW, updatedAt: NOW } },
+      { ok: true, data: MEMORY_SNAPSHOT },
+    ]);
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'en', memoryOpen: true }));
+    tree = renderTree();
+    const editButton = flatten(nodesWithClass(tree, 'stk-memory-item')[0])
+      .find((node) => node.type === 'button' && node.props['aria-label'] === en['note.edit']);
+    assert(editButton, 'fact edit button missing');
+    editButton.props.onClick();
+    assert(hooks[STATE.factsEditingId] === 'm_ab12cd34', 'editing state should point at the fact');
+    assert(hooks[STATE.factsEditDraft] === '周报固定在周五下午发', 'edit draft should start from the fact text');
+    tree = renderTree();
+    const editInput = flatten(nodesWithClass(tree, 'stk-memory-edit')[0]).find((node) => node.type === 'input');
+    assert(editInput && editInput.props.value === '周报固定在周五下午发', 'inline edit input missing');
+    editInput.props.onChange({ target: { value: '周报固定在周五 16:00 发' } });
+    assert(hooks[STATE.factsEditDraft] === '周报固定在周五 16:00 发', 'edit draft did not update');
+    tree = renderTree();
+    const saveButton = flatten(nodesWithClass(tree, 'stk-memory-edit')[0])
+      .find((node) => node.type === 'button' && textsOf(node.children).join('') === en['edit.submit']);
+    assert(saveButton, 'save-edit button missing');
+    saveButton.props.onClick();
+    await flush();
+    const updated = fetchCalls.find((call) => call.body && call.body.action === 'updateFact');
+    assert(
+      updated && updated.body.id === 'm_ab12cd34' && updated.body.text === '周报固定在周五 16:00 发',
+      `updateFact body mismatch: ${JSON.stringify(updated && updated.body)}`,
+    );
+    assert(hooks[STATE.factsEditingId] === null, 'the edit row should close after saving');
+
+    /* forget */
+    stubFetch([
+      { ok: true, data: { forgotten: 'm_ef56gh78' } },
+      { ok: true, data: MEMORY_SNAPSHOT },
+    ]);
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'en', memoryOpen: true }));
+    tree = renderTree();
+    const deleteButton = flatten(nodesWithClass(tree, 'stk-memory-item')[1])
+      .find((node) => node.type === 'button' && node.props['aria-label'] === en['note.delete']);
+    assert(deleteButton, 'fact delete button missing');
+    deleteButton.props.onClick();
+    await flush();
+    const forgotten = fetchCalls.find((call) => call.body && call.body.action === 'forget');
+    assert(forgotten && forgotten.body.id === 'm_ef56gh78', `forget body mismatch: ${JSON.stringify(forgotten && forgotten.body)}`);
+  });
+
+  await check('memory: 本周复盘 renders headline, six stat chips, highlights, tips and the source', async () => {
+    const zh = zhDict();
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'zh', memoryOpen: true, memoryReview: REVIEW_FIXTURE }));
+    let tree = renderTree();
+    const reviewSection = memorySection(tree, zh['memory.reviewTitle']);
+    assert(reviewSection, 'review section missing');
+    assert(findText(tree, REVIEW_FIXTURE.headline), 'review headline missing');
+    const stats = nodesWithClass(reviewSection, 'stk-memory-stat');
+    assert(stats.length === 6, `expected six stat chips, got ${stats.length}`);
+    const statTexts = stats.map((node) => textsOf(node.children).join(''));
+    for (const [label, value] of [
+      [zh['memory.stats.completed'], '4'], [zh['memory.stats.created'], '5'], [zh['memory.stats.postponed'], '2'],
+      [zh['memory.stats.removed'], '1'], [zh['memory.stats.open'], '3'], [zh['memory.stats.overdue'], '1'],
+    ]) {
+      assert(statTexts.some((entry) => entry.includes(label) && entry.includes(value)), `stat chip ${label} ${value} missing: ${JSON.stringify(statTexts)}`);
+    }
+    assert(findText(tree, zh['ai.source.fallback']), 'the fallback source badge missing');
+    assert(findText(tree, zh['memory.highlights']) && findText(tree, REVIEW_FIXTURE.highlights[0]), 'review highlights missing');
+    assert(findText(tree, zh['memory.tips']) && findText(tree, REVIEW_FIXTURE.tips[0].text), 'review tips missing');
+
+    stubFetch({ ok: true, data: { review: REVIEW_FIXTURE } });
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'zh', memoryOpen: true }));
+    tree = renderTree();
+    buttonByLabel(tree, zh['memory.generateReview']).props.onClick();
+    await flush();
+    assert(fetchCalls.some((call) => call.body && call.body.action === 'review'), '生成复盘 should POST the review action');
+    assert(hooks[STATE.memoryReview] && hooks[STATE.memoryReview].headline === REVIEW_FIXTURE.headline, 'the review result should be stored');
+  });
+
+  await check('memory: 可能值得记住 renders proposals; 忽略 is local; 记住 calls remember', async () => {
+    const zh = zhDict();
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'zh', memoryOpen: true, memoryCandidates: CANDIDATE_FIXTURE }));
+    let tree = renderTree();
+    let candidates = nodesWithClass(tree, 'stk-memory-candidate');
+    assert(candidates.length === 2, `expected two candidates, got ${candidates.length}`);
+    assert(findText(tree, CANDIDATE_FIXTURE[0].text) && findText(tree, CANDIDATE_FIXTURE[0].reason), 'candidate text/reason missing');
+    fetchCalls = [];
+    const ignoreButton = flatten(candidates[1]).find((node) => node.type === 'button' && textsOf(node.children).join('') === zh['memory.ignore']);
+    assert(ignoreButton, '忽略 button missing');
+    ignoreButton.props.onClick();
+    assert(fetchCalls.length === 0, '忽略 must not call the Host');
+    assert(hooks[STATE.memoryCandidates].length === 1, '忽略 should drop the candidate locally');
+    tree = renderTree();
+    assert(nodesWithClass(tree, 'stk-memory-candidate').length === 1, 'the ignored candidate should disappear');
+
+    stubFetch([
+      { ok: true, data: { id: 'm_cand0001', text: CANDIDATE_FIXTURE[0].text, source: 'user', createdAt: NOW, updatedAt: NOW } },
+      { ok: true, data: MEMORY_SNAPSHOT },
+    ]);
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'zh', memoryOpen: true, memoryCandidates: CANDIDATE_FIXTURE }));
+    tree = renderTree();
+    flatten(nodesWithClass(tree, 'stk-memory-candidate')[0])
+      .find((node) => node.type === 'button' && textsOf(node.children).join('') === zh['memory.remember'])
+      .props.onClick();
+    await flush();
+    const posted = fetchCalls.find((call) => call.body && call.body.action === 'remember');
+    assert(posted && posted.body.text === CANDIDATE_FIXTURE[0].text, `candidate remember body mismatch: ${JSON.stringify(posted && posted.body)}`);
+    assert(hooks[STATE.memoryCandidates].length === 1, 'the confirmed candidate should be removed from the list');
+
+    stubFetch({ ok: true, data: { candidates: CANDIDATE_FIXTURE, generatedAt: NOW, source: 'fallback' } });
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'zh', memoryOpen: true, memoryCandidates: null }));
+    tree = renderTree();
+    assert(findText(tree, zh['memory.candidatesHint']), 'the not-yet-fetched hint should render');
+    buttonByLabel(tree, zh['memory.findCandidates']).props.onClick();
+    await flush();
+    assert(fetchCalls.some((call) => call.body && call.body.action === 'memoryCandidates'), '发现记忆 should POST memoryCandidates');
+    assert(hooks[STATE.memoryCandidates].length === 2, 'the proposals should populate the candidate list');
+  });
+
+  await check('badge: 改期 N 次 appears only at >= 2 postponements, in both views', () => {
+    const zh = zhDict();
+    const en = enDict();
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'zh' }));
+    let tree = renderTree();
+    const zhBadge = (id) => nodesWithClass(cardOf(tree, id), 'stk-chip--postpone');
+    assert(zhBadge('td_1').length === 1, 'td_1 (3 postponements) should show the 改期 badge');
+    assert(zhBadge('td_2').length === 0, 'td_2 (1 postponement) must not show the badge');
+    assert(zhBadge('td_3').length === 0, 'td_3 (0 postponements) must not show the badge');
+    assert(textsOf(zhBadge('td_1')[0].children).join('') === '改期 3 次', `zh badge text mismatch: ${JSON.stringify(textsOf(zhBadge('td_1')[0].children))}`);
+
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'en' }));
+    tree = renderTree();
+    const enChip = nodesWithClass(cardOf(tree, 'td_1'), 'stk-chip--postpone')[0];
+    assert(enChip, 'English postponement badge missing');
+    assert(textsOf(enChip.children).join('') === 'Postponed 3×', `en badge text mismatch: ${JSON.stringify(textsOf(enChip.children))}`);
+
+    /* minimal list: the badge lives in the expanded meta row */
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'zh', view: 'list' }));
+    tree = renderTree();
+    assert(nodesWithClass(tree, 'stk-chip--postpone').length === 0, 'collapsed minimal rows must hide the badge');
+    const rows = flatten(tree).filter((node) => node.type === 'button' && hasClass(node, 'stk-list-row'));
+    rows[0].props.onClick();
+    tree = renderTree();
+    const listChips = nodesWithClass(tree, 'stk-chip--postpone');
+    assert(listChips.length === 1, `the expanded minimal row should show exactly one badge, got ${listChips.length}`);
+    assert(textsOf(listChips[0].children).join('') === '改期 3 次', 'the expanded row badge text mismatch');
+    assert(hasClass(listChips[0], 'stk-chip--list'), 'the list badge should use the list chip variant');
+  });
+
+  await check('advice: a stored thread resumes from memory.threads and 继续聊聊 re-requests it', async () => {
+    const zh = zhDict();
+    stubFetch({ ok: true, data: { kind: 'advice', advice: { text: '这次先写提纲', source: 'model' }, round: 1 } });
+    resetHooks(seed({ snapshot: MEMORY_SNAPSHOT, loading: false, lang: 'zh' }));
+    let tree = renderTree();
+    const adviceButton = noteAdviceButton(tree, 'td_1');
+    assert(adviceButton, 'card AI advice button missing');
+    adviceButton.props.onClick();
+    await flush();
+    const dialog = hooks[STATE.adviceDialog];
+    assert(dialog && dialog.phase === 'advice', `a stored thread should resume in the advice phase, got ${JSON.stringify(dialog && dialog.phase)}`);
+    assert(dialog.resumed === true, 'the resumed flag missing');
+    assert(dialog.adviceText === MEMORY_THREAD.advice.text, `stored advice mismatch: ${JSON.stringify(dialog.adviceText)}`);
+    assert(
+      JSON.stringify(dialog.history) === JSON.stringify([{ question: '这一步卡在哪？', answer: '缺资料' }]),
+      `resumed history mismatch: ${JSON.stringify(dialog.history)}`,
+    );
+    assert(fetchCalls.length === 0, 'opening a stored thread must not call the Host');
+    tree = renderTree();
+    const adviceField = flatten(tree).find((node) => node.type === 'textarea' && node.props.id === 'stk-advice-text');
+    assert(adviceField && adviceField.props.value === MEMORY_THREAD.advice.text, 'the stored advice should be shown');
+    const continueButton = buttonByLabel(tree, zh['memory.continueThread']);
+    assert(continueButton, '继续聊聊 button missing on a resumed thread');
+
+    stubFetch({ ok: true, data: { kind: 'advice', advice: { text: '这次先写提纲', source: 'model' }, round: 1 } });
+    continueButton.props.onClick();
+    await flush();
+    const posted = fetchCalls[fetchCalls.length - 1].body;
+    assert(posted.action === 'aiNoteAdvice' && posted.id === 'td_1', `continue-thread request mismatch: ${JSON.stringify(posted)}`);
+    assert(
+      JSON.stringify(posted.history) === JSON.stringify([{ question: '这一步卡在哪？', answer: '缺资料' }]),
+      `continue-thread history mismatch: ${JSON.stringify(posted.history)}`,
+    );
+  });
+
+  await check('legacy: a snapshot without data.memory shows no badge and an empty memory dialog', async () => {
+    const zh = zhDict();
+    resetHooks(seed({ snapshot: TAGGED_SNAPSHOT, loading: false, lang: 'zh' }));
+    let tree = renderTree();
+    assert(nodesWithClass(tree, 'stk-chip--postpone').length === 0, 'an old Host snapshot must not show postponement badges');
+    const memoryButton = flatten(tree).find((node) => node.type === 'button' && node.props['aria-label'] === zh['memory.button']);
+    assert(memoryButton, '记忆 button should exist for an old Host too');
+    memoryButton.props.onClick();
+    tree = renderTree();
+    assert(nodesWithClass(tree, 'stk-modal--memory').length === 1, 'the memory dialog should open empty instead of crashing');
+    assert(findText(tree, zh['memory.emptyFacts']), 'empty-facts message missing');
+    assert(findText(tree, zh['memory.reviewHint']), 'review hint missing');
+    assert(findText(tree, zh['memory.candidatesHint']), 'candidates hint missing');
+
+    /* a fresh conversation keeps the three-round path (no stored thread) */
+    stubFetch({ ok: true, data: { kind: 'advice', advice: { text: '先写两段', source: 'fallback' }, round: 0 } });
+    resetHooks(seed({ snapshot: TAGGED_SNAPSHOT, loading: false, lang: 'zh' }));
+    tree = renderTree();
+    noteAdviceButton(tree, 'td_1').props.onClick();
+    await flush();
+    const dialog = hooks[STATE.adviceDialog];
+    assert(dialog && dialog.phase === 'advice', 'a fresh conversation still reaches the advice phase');
+    assert(dialog.resumed !== true, 'a fresh conversation must not be marked as resumed');
+    assert(!buttonByLabel(renderTree(), zh['memory.continueThread']), '继续聊聊 must not render without a stored thread');
+  });
+
+  await check('memory: 清空记忆 uses the two-step confirm and posts clearMemory', async () => {
+    const en = enDict();
+    stubFetch([
+      { ok: true, data: { cleared: { facts: 2, threads: 1, events: 7 } } },
+      { ok: true, data: MEMORY_SNAPSHOT },
+    ]);
+    resetHooks(seed({
+      snapshot: MEMORY_SNAPSHOT,
+      loading: false,
+      lang: 'en',
+      memoryOpen: true,
+      memoryReview: REVIEW_FIXTURE,
+      memoryCandidates: CANDIDATE_FIXTURE,
+    }));
+    let tree = renderTree();
+    const clearButton = flatten(tree).find((node) => node.type === 'button' && textsOf(node.children).join('') === en['memory.clear']);
+    assert(clearButton, 'Clear memory button missing');
+    clearButton.props.onClick();
+    assert(hooks[STATE.memoryArmClear] === true, 'the first click should only arm the button');
+    assert(fetchCalls.length === 0, 'arming the button must not call the Host');
+    tree = renderTree();
+    const armedButton = flatten(tree).find((node) => node.type === 'button' && textsOf(node.children).join('') === en['memory.clearConfirm']);
+    assert(armedButton, 'the armed confirm label missing');
+    armedButton.props.onClick();
+    await flush();
+    assert(fetchCalls.some((call) => call.body && call.body.action === 'clearMemory'), 'the second click should POST clearMemory');
+    assert(hooks[STATE.memoryReview] === null && hooks[STATE.memoryCandidates] === null, 'clearing should reset the review/candidate views');
+    assert(hooks[STATE.toast] && hooks[STATE.toast].text === en['memory.cleared'], 'cleared toast missing');
   });
 
   /* ---------------- legacy Host ---------------- */

@@ -5,7 +5,7 @@
 A **bilingual sticky-note todo board** for the DeepSeek Harness Web GUI.
 DeepSeek Harness Web GUI 里的一块便利贴待办板 —— 中英双语、随手贴、AI 帮忙整理。
 
-![version](https://img.shields.io/badge/version-1.6.0-4d6bfe)
+![version](https://img.shields.io/badge/version-1.7.0-4d6bfe)
 [![npm](https://img.shields.io/npm/v/dsh-sticker-todo)](https://www.npmjs.com/package/dsh-sticker-todo)
 ![DSH](https://img.shields.io/badge/DSH-Web%20GUI-0b7285)
 ![i18n](https://img.shields.io/badge/i18n-zh%20%7C%20en-2f9e44)
@@ -32,8 +32,9 @@ DeepSeek Harness Web GUI 里的一块便利贴待办板 —— 中英双语、�
 entry to the left sidebar, opening a paper-walled board of sticky notes. Each note has a title,
 details, colour, priority, deadline, timed reminder and tags; AI can plan the schedule, classify the
 board into tags, and advise on **one note at a time** — asking a few pick-or-type questions first when
-it needs context. The panel, the HTTP route and the agent tool share one Host implementation, so the
-chat and the panel can never disagree.
+it needs context. Since v1.7.0 it also **remembers**: a completion / postponement history, editable
+preferences, a weekly review, and a coach conversation that survives restarts. The panel, the HTTP
+route and the agent tool share one Host implementation, so the chat and the panel can never disagree.
 
 ## Features
 
@@ -61,6 +62,12 @@ chat and the panel can never disagree.
   suggestion when it has enough context, or asks up to three questions first. Every question comes
   with **2–4 pickable answers plus a free-text box**; the final advice is editable and can be appended
   to the note's details with one click.
+- **Memory** — the header `🧠 记忆` dialog remembers what matters: **我的偏好** holds editable facts
+  injected into every AI prompt; **本周复盘** derives a weekly review (completed / created / postponed /
+  removed, plus open and overdue) from the event log; **可能值得记住** lets the AI *propose* facts —
+  nothing is stored until you click 记住. A two-step 清空记忆 wipes the history. Each note's coaching
+  conversation and its last advice survive restarts: reopen `✦` and use `继续聊聊` to carry on instead
+  of starting over. Notes postponed twice or more show a `改期 N 次` badge.
 - **Motion & polish** — staggered note entrances, dialog transitions, hover/focus micro-interactions,
   AI loading shimmer; everything respects `prefers-reduced-motion` and animates only
   `transform`/`opacity`.
@@ -131,13 +138,24 @@ AI calls use the model selected as DSH's current default model.
 - **AI card** — schedule, classify & tag, clear plan.
 - **AI advice** — `✦` on a card; pick a suggested answer or type your own, then edit the advice and
   append it to the note.
+- **Memory** — `🧠 记忆` in the header: add / edit / forget preferences, generate a weekly review,
+  discover AI-proposed memories (记住 or 忽略), and clear the history with the two-step 清空记忆.
+  A note postponed at least twice shows a `改期 N 次` chip; reopen a coached note to `继续聊聊`.
 
 ## Data
 
 - Default file `~/.dsh-sticker-todo/todos.json`, rewritten atomically (temp + rename) after each change.
-- The document carries a `version` field; since v1.1.0 every note has `tags: string[]` and older files
-  load with `[]`.
-- Every timestamp is an ISO-8601 string (`dueAt` / `remindAt` / `remindFiredAt` / `planAt`) or `null`.
+- The document is **v2** since v1.7.0: `{ version: 2, todos, events, memory: { facts, threads } }`.
+  A v1 file loads unchanged with empty memory and is upgraded on the next write; an older plugin
+  ignores the extra members, so downgrading never loses notes.
+- Memory contents: the event log (≤ 2000 events, ring), user facts (≤ 50, each 1–120 characters) and
+  per-note advice threads (≤ 200, each with ≤ 3 Q&A rounds and the last advice). `postpones`,
+  weekly statistics and `averageOpenAgeDays` are derived on read and never persisted.
+- Every timestamp is an ISO-8601 string (`dueAt` / `remindAt` / `remindFiredAt` / `planAt` / event and
+  fact `at`, `createdAt`, `updatedAt`) or `null`.
+- **Clearing / resetting**: `🧠 记忆 → 清空记忆` (or `POST {action:'clearMemory'}`) drops events, facts
+  and threads but keeps every note. Deleting `~/.dsh-sticker-todo/todos.json` resets everything,
+  notes included.
 
 ## Project layout
 
@@ -153,7 +171,7 @@ dsh-to-do/
 ├── locale/{zh,en}.json # Plugin Manager title and description
 ├── icon.svg            # plugin icon
 ├── verify/             # offline manifest / offline host integration / client render / live HTTP smoke
-├── docs/               # README preview images
+├── docs/               # README preview images + MEMORY.md (memory design notes)
 ├── CONTRACT.md         # shared Host ↔ Client contract
 └── HANDOFF.md          # maintainer hand-off notes
 ```
@@ -182,23 +200,32 @@ Browser (client.js)                      Host (index.js)
 | Schedule planning | `POST {action:'aiPlan'}` | deterministic local scheduler, `source: "fallback"` |
 | Tag classification | `POST {action:'aiTag'}` | local keyword classifier, `source: "fallback"` |
 | Per-note advice | `POST {action:'aiNoteAdvice'}` | local advice text, `source: "fallback"`, asks nothing |
+| Weekly review | `POST {action:'review'}` | deterministic review derived from the event log, `source: "fallback"` |
+| Memory candidates | `POST {action:'memoryCandidates'}` | local patterns only (postpone ≥ 3, a tag on ≥ 3 notes, chronic overdue), never stored |
 
 Per-note advice asks at most three questions; a fourth model question is rejected by the Host and
 answered with advice. Questions always carry 2–4 options — a question without valid options is
-rejected and degraded to advice, so the UI never shows empty choices.
+rejected and degraded to advice, so the UI never shows empty choices. The model may only *propose*
+memory facts through `memoryCandidates`; a proposal is written only when the user confirms it with
+`remember`.
 
 ## Agent tool
 
 The `sticker_todo` tool exposes the board to the model:
-`list` · `add` · `update` · `complete` · `remove` · `clear_completed` · `plan` · `advice` · `tag`
+`list` · `add` · `update` · `complete` · `remove` · `clear_completed` · `plan` · `advice` · `tag` ·
+`remember` · `forget` · `memories` · `review`
 
-Examples: “plan my week”, “group my todos by topic”, “mark 写周报 as done”.
+Read results also echo `memory: { facts: string[], stats }`, so “how did my week go” needs one call.
+Examples: “plan my week”, “group my todos by topic”, “mark 写周报 as done”, “remember that I send the
+weekly report on Friday afternoons”.
 
 ## HTTP API
 
 One prefix route: `GET /dsh-todo/state` and `POST /dsh-todo/action`, with the actions
 `add` / `update` / `toggle` / `remove` / `clearCompleted` / `ackReminders` / `aiPlan` / `aiAdvice` /
-`aiClearPlan` / `aiTag` / `aiNoteAdvice`. Full shapes and error codes live in
+`aiClearPlan` / `aiTag` / `aiNoteAdvice` / `remember` / `updateFact` / `forget` / `review` /
+`memoryCandidates` / `clearMemory`. `state` also returns the `memory` block.
+Full shapes and error codes live in
 [`CONTRACT.md`](https://github.com/kevin-qiao/dsh-todo/blob/main/CONTRACT.md).
 
 ## Development & verification
@@ -216,8 +243,9 @@ All four scripts are dependency-free and use Node built-ins only. The first two 
 network or files outside the repo; `api-smoke` only creates and removes its own test notes, restores
 pre-existing tags after the `aiTag` check, and never deletes the user's finished notes.
 
-Baseline (v1.5.0): `check-static` 51 checks, `host-actions` 25, `client-render` 41, `api-smoke` 24 —
-all passing (`api-smoke` varies a little with the board contents; one check SKIPs to protect user data).
+Baseline (v1.7.0): `check-static` 67 checks, `host-actions` 43, `client-render` 50, `api-smoke` 27 —
+all passing (`api-smoke` varies a little with the board contents and may SKIP a check that would
+protect user data; it forgets its temporary memory fact and removes every note it creates).
 
 ## FAQ
 
@@ -228,6 +256,9 @@ all passing (`api-smoke` varies a little with the board contents; one check SKIP
 - **Chinese is handwritten but English is sans-serif?** That is the `default` font preset; switch to
   `ui` for a uniform UI font.
 - **How do I change the language?** Use the header language switch; `自动` follows the DSH locale.
+- **What exactly is remembered?** The event history, the preferences you confirm, the weekly review
+  data and each note's coaching conversation; the model may only *propose* facts, never write them.
+  Open `🧠 记忆` to review or delete them, or 清空记忆 to drop all history (notes are kept).
 - **Where are the notes?** `~/.dsh-sticker-todo/todos.json` (override with `dataFile`).
 
 ## Contributing
@@ -241,9 +272,9 @@ all passing (`api-smoke` varies a little with the board contents; one check SKIP
 
 ## License
 
-[MIT](https://github.com/kevin-qiao/dsh-todo/blob/main/LICENSE) © 2026 Kevin. Not published to npm (`private: true` in `package.json` prevents an
-accidental publish). The icon is original artwork; the plugin runs inside DeepSeek Harness, which is
-licensed separately.
+[MIT](https://github.com/kevin-qiao/dsh-todo/blob/main/LICENSE) © 2026 Kevin. Published to npm as
+[`dsh-sticker-todo`](https://www.npmjs.com/package/dsh-sticker-todo). The icon is original artwork;
+the plugin runs inside DeepSeek Harness, which is licensed separately.
 
 ---
 

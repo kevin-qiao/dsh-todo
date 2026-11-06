@@ -170,6 +170,38 @@ window.__ModuleLoader__.load({
       'advice.appended': ['已追加到详情', 'Added to details'],
       'advice.hint': ['这段建议可以直接修改', 'You can edit this advice'],
       'advice.close': ['关闭', 'Close'],
+      'memory.button': ['记忆', 'Memory'],
+      'memory.title': ['记忆', 'Memory'],
+      'memory.hint': ['只有你确认的内容才会被记住', 'Only what you confirm is remembered'],
+      'memory.factsTitle': ['我的偏好', 'My preferences'],
+      'memory.emptyFacts': ['还没有记住任何偏好', 'No saved preferences yet'],
+      'memory.factPlaceholder': ['例如：周报固定在周五下午发', 'e.g. Weekly report goes out Friday afternoon'],
+      'memory.remember': ['记住', 'Remember'],
+      'memory.reviewTitle': ['本周复盘', 'Weekly review'],
+      'memory.generateReview': ['生成复盘', 'Generate review'],
+      'memory.reviewing': ['正在生成复盘…', 'Generating review…'],
+      'memory.reviewHint': ['生成后可以看看这一周的节奏', 'Generate to see how your week went'],
+      'memory.highlights': ['要点', 'Highlights'],
+      'memory.tips': ['建议', 'Tips'],
+      'memory.candidatesTitle': ['可能值得记住', 'Worth remembering'],
+      'memory.findCandidates': ['发现记忆', 'Find memories'],
+      'memory.finding': ['正在发现…', 'Finding…'],
+      'memory.candidatesEmpty': ['暂时没有新的记忆候选', 'No new memory candidates'],
+      'memory.candidatesHint': ['AI 只做提议，你确认后才会记住', 'The AI only suggests — nothing is saved until you confirm'],
+      'memory.ignore': ['忽略', 'Ignore'],
+      'memory.clear': ['清空记忆', 'Clear memory'],
+      'memory.clearConfirm': ['确认清空记忆？', 'Really clear memory?'],
+      'memory.cleared': ['记忆已清空', 'Memory cleared'],
+      'memory.saved': ['已记住', 'Saved to memory'],
+      'memory.postponeTimes': ['改期 {count} 次', 'Postponed {count}×'],
+      'memory.postponeHint': ['这张便签被改期了多次', 'This note has been postponed several times'],
+      'memory.continueThread': ['继续聊聊', 'Keep chatting'],
+      'memory.stats.completed': ['完成', 'Done'],
+      'memory.stats.created': ['新建', 'New'],
+      'memory.stats.postponed': ['改期', 'Postponed'],
+      'memory.stats.removed': ['删除', 'Removed'],
+      'memory.stats.open': ['未完成', 'Open'],
+      'memory.stats.overdue': ['逾期', 'Overdue'],
       'font.title': ['字体设置', 'Note font'],
       'font.hint': ['只影响便签文字', 'Note text only'],
       'font.default': ['默认（英文界面字体 · 中文楷体）', 'Default (UI Latin · KaiTi CJK)'],
@@ -270,6 +302,38 @@ window.__ModuleLoader__.load({
       } catch {
         /* private mode / storage disabled: the choice still applies for this page session */
       }
+    }
+
+    /* ---------------------------------------------------------------- memory */
+
+    /** How often one note's deadline was postponed, from the state's memory block (0 when absent). */
+    function postponeCountOf(memory, id) {
+      const map = memory && typeof memory.postpones === 'object' && memory.postpones !== null ? memory.postpones : null
+      if (map === null) return 0
+      const value = map[String(id)]
+      return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
+    }
+
+    /** Persisted coaching thread for one note, or null (old Host / no thread yet). */
+    function threadOf(memory, id) {
+      const threads = memory && typeof memory.threads === 'object' && memory.threads !== null ? memory.threads : null
+      if (threads === null) return null
+      const thread = threads[String(id)]
+      return thread && typeof thread === 'object' ? thread : null
+    }
+
+    /** Facts from the state's memory block, newest first as the Host sends them. */
+    function memoryFactsOf(memory) {
+      return memory && Array.isArray(memory.facts) ? memory.facts.filter((fact) => fact && typeof fact.text === 'string') : []
+    }
+
+    /** Stored coaching rounds (question/answer pairs only) for re-requesting a thread. */
+    function threadHistory(thread) {
+      const rounds = thread && Array.isArray(thread.rounds) ? thread.rounds : []
+      return rounds
+        .filter((round) => round && typeof round.question === 'string' && typeof round.answer === 'string')
+        .map((round) => ({ question: round.question, answer: round.answer }))
+        .slice(0, MAX_ADVICE_ROUNDS)
     }
 
     /**
@@ -846,12 +910,17 @@ window.__ModuleLoader__.load({
      * @param {string} [extraClass] extra class(es) for the chip (list variant uses `stk-chip--list`).
      * @returns {Array<any>} chip elements.
      */
-    function noteMetaChips(todo, t, nowIso, localeId, extraClass = '') {
+    function noteMetaChips(todo, t, nowIso, localeId, extraClass = '', postponeCount = 0) {
       const due = dueInfo(todo.dueAt, nowIso, localeId, t)
       const chips = []
       if (due !== null) chips.push(h('span', { key: 'due', className: `stk-chip ${due.tone}${extraClass}`, title: due.title }, `⏳ ${due.text}`))
       if (todo.remindAt) chips.push(h('span', { key: 'remind', className: `stk-chip${extraClass}`, title: t('field.remind') }, `⏰ ${formatDateTime(todo.remindAt, localeId)}`))
       if (todo.planAt) chips.push(h('span', { key: 'plan', className: `stk-chip stk-chip--plan${extraClass}`, title: todo.planNote || t('ai.plan') }, `🗓 ${formatDateTime(todo.planAt, localeId)}`))
+      if (postponeCount >= 2) {
+        chips.push(h('span', {
+          key: 'postpone', className: `stk-chip stk-chip--postpone${extraClass}`, title: t('memory.postponeHint'),
+        }, t('memory.postponeTimes', { count: postponeCount })))
+      }
       return chips
     }
 
@@ -892,7 +961,7 @@ window.__ModuleLoader__.load({
       const stagger = Math.max(0, Math.min(Number(props.delay) || 0, 10)) * 28
       const style = { '--stk-rot': `${rotationFor(String(todo.id))}deg`, '--stk-delay': `${stagger}ms` }
 
-      const chips = noteMetaChips(todo, t, nowIso, localeId)
+      const chips = noteMetaChips(todo, t, nowIso, localeId, '', Number(props.postponeCount) || 0)
       const tags = todoTags(todo)
       const tagChips = noteTagChips(todo, t, props.onTagClick)
 
@@ -937,7 +1006,7 @@ window.__ModuleLoader__.load({
       const priority = todo.priority === 1 || todo.priority === 3 ? todo.priority : 2
       const due = dueInfo(todo.dueAt, nowIso, localeId, t)
       const tags = todoTags(todo)
-      const chips = noteMetaChips(todo, t, nowIso, localeId, ' stk-chip--list')
+      const chips = noteMetaChips(todo, t, nowIso, localeId, ' stk-chip--list', Number(props.postponeCount) || 0)
       const tagChips = noteTagChips(todo, t, props.onTagClick, ' stk-chip--list')
       const stagger = Math.max(0, Math.min(Number(delay) || 0, 12)) * 24
       const detailsId = `stk-list-details-${String(todo.id)}`
@@ -988,7 +1057,7 @@ window.__ModuleLoader__.load({
      */
     function AdviceDialog({
       t, dialog, onClose, onAnswerChange, onPickAnswer, onSubmitAnswer,
-      onAdviceChange, onPickAlternative, onAppend,
+      onAdviceChange, onPickAlternative, onAppend, onContinue,
     }) {
       const phase = dialog.phase
       const closing = dialog.closing === true
@@ -1058,6 +1127,7 @@ window.__ModuleLoader__.load({
             h('div', { className: 'stk-hint' }, t('advice.hint')),
             h('div', { className: 'stk-advice-actions' },
               h('button', { type: 'button', className: 'stk-btn', onClick: onClose }, t('advice.close')),
+              dialog.resumed ? h('button', { type: 'button', className: 'stk-btn', onClick: onContinue }, t('memory.continueThread')) : null,
               h('button', {
                 type: 'button', className: 'stk-btn stk-btn--primary',
                 disabled: dialog.busy || adviceText.trim() === '', onClick: onAppend,
@@ -1090,7 +1160,168 @@ window.__ModuleLoader__.load({
             errorNode, loadingNode, questionNode, adviceNode, idleNode)))
     }
 
-    /* ---------------------------------------------------------- global notice */
+    /**
+     * The v1.7.0 memory dialog: user-owned facts, the weekly review and AI-proposed memory
+     * candidates. Proposals are never stored until the user confirms. Presentational; the panel
+     * owns all state and performs the Host calls.
+     */
+    function MemoryDialog({
+      t, facts, review, candidates, closing, busy, error,
+      factDraft, editingId, editDraft, clearArmed,
+      onClose, onFactDraftChange, onRememberFact, onEditFact, onEditDraftChange,
+      onSaveFactEdit, onCancelFactEdit, onForgetFact, onGenerateReview,
+      onFindCandidates, onRememberCandidate, onIgnoreCandidate, onClearMemory,
+    }) {
+      const isBusy = busy !== null
+      const errorNode = error ? h('div', { className: 'stk-ai-error', role: 'alert' }, error) : null
+      const statChips = review === null ? [] : [
+        ['memory.stats.completed', review.stats?.completed],
+        ['memory.stats.created', review.stats?.created],
+        ['memory.stats.postponed', review.stats?.postponed],
+        ['memory.stats.removed', review.stats?.removed],
+        ['memory.stats.open', review.stats?.open],
+        ['memory.stats.overdue', review.stats?.overdue],
+      ].map(([label, value]) => h('span', { className: 'stk-memory-stat', key: label },
+        h('span', { className: 'stk-memory-stat-label' }, t(label)),
+        h('span', { className: 'stk-memory-stat-value' }, String(typeof value === 'number' ? value : 0))))
+      const highlights = Array.isArray(review?.highlights) ? review.highlights.filter((line) => typeof line === 'string' && line !== '') : []
+      const tips = Array.isArray(review?.tips) ? review.tips.filter((tip) => tip && typeof tip.text === 'string' && tip.text !== '') : []
+
+      const factForm = h('div', { className: 'stk-memory-form' },
+        h('input', {
+          className: 'stk-field-input', type: 'text', value: factDraft, autoFocus: true,
+          placeholder: t('memory.factPlaceholder'), 'aria-label': t('memory.factPlaceholder'),
+          onChange: onFactDraftChange,
+          onKeyDown: (event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              if (!isBusy) onRememberFact()
+            }
+          },
+        }),
+        h('button', {
+          type: 'button', className: 'stk-btn stk-btn--primary',
+          disabled: isBusy || String(factDraft ?? '').trim() === '', onClick: onRememberFact,
+        }, t('memory.remember')))
+
+      const factItems = facts.map((fact) => {
+        const editing = editingId === fact.id
+        if (editing) {
+          return h('li', { className: 'stk-memory-item', key: fact.id },
+            h('div', { className: 'stk-memory-edit' },
+              h('input', {
+                className: 'stk-field-input', type: 'text', value: editDraft,
+                'aria-label': t('memory.factsTitle'), onChange: onEditDraftChange,
+              }),
+              h('div', { className: 'stk-memory-actions' },
+                h('button', {
+                  type: 'button', className: 'stk-btn stk-btn--primary',
+                  disabled: isBusy || String(editDraft ?? '').trim() === '', onClick: onSaveFactEdit,
+                }, t('edit.submit')),
+                h('button', { type: 'button', className: 'stk-btn stk-btn--ghost', onClick: onCancelFactEdit }, t('edit.cancel')))))
+        }
+        return h('li', { className: 'stk-memory-item', key: fact.id, 'data-fact-id': fact.id },
+          h('span', { className: 'stk-memory-text' }, String(fact.text ?? '')),
+          h('div', { className: 'stk-memory-actions' },
+            h('button', {
+              type: 'button', className: 'stk-mini-btn', title: t('note.edit'), 'aria-label': t('note.edit'),
+              disabled: isBusy, onClick: () => onEditFact(fact),
+            }, '✎'),
+            h('button', {
+              type: 'button', className: 'stk-mini-btn stk-mini-btn--danger', title: t('note.delete'),
+              'aria-label': t('note.delete'), disabled: isBusy, onClick: () => onForgetFact(fact),
+            }, '✕')))
+      })
+
+      const candidateItems = Array.isArray(candidates) ? candidates : null
+      const candidateList = candidateItems === null
+        ? h('div', { className: 'stk-memory-empty' }, t('memory.candidatesHint'))
+        : candidateItems.length === 0
+          ? h('div', { className: 'stk-memory-empty' }, t('memory.candidatesEmpty'))
+          : h('ul', { className: 'stk-memory-candidates' }, candidateItems.map((candidate, index) => h('li', {
+              className: 'stk-memory-candidate', key: `${String(candidate?.text ?? '')}-${index}`,
+            },
+              h('div', { className: 'stk-memory-candidate-text' }, String(candidate?.text ?? '')),
+              candidate?.reason ? h('div', { className: 'stk-memory-candidate-reason' }, String(candidate.reason)) : null,
+              h('div', { className: 'stk-memory-actions' },
+                h('button', {
+                  type: 'button', className: 'stk-btn stk-btn--primary', disabled: isBusy,
+                  onClick: () => onRememberCandidate(candidate, index),
+                }, t('memory.remember')),
+                h('button', {
+                  type: 'button', className: 'stk-btn stk-btn--ghost', disabled: isBusy,
+                  onClick: () => onIgnoreCandidate(index),
+                }, t('memory.ignore'))))))
+
+      return h('div', {
+        className: `stk-modal-layer${closing ? ' stk-modal-layer--closing' : ''}`,
+        onMouseDown: (event) => {
+          if (event.target === event.currentTarget) onClose()
+        },
+      },
+        h('div', {
+          className: `stk-modal stk-modal--memory${closing ? ' stk-modal--closing' : ''}`,
+          role: 'dialog', 'aria-modal': 'true', 'aria-label': t('memory.title'),
+          onMouseDown: (event) => event.stopPropagation(),
+        },
+          h('div', { className: 'stk-modal-head' },
+            h('span', { className: 'stk-ai-mark', 'aria-hidden': 'true' }, '🧠'),
+            h('span', { className: 'stk-modal-title' }, t('memory.title')),
+            h('span', { className: 'stk-hint stk-advice-note-title' }, t('memory.hint')),
+            h('button', {
+              type: 'button', className: 'stk-modal-close',
+              title: t('action.dismiss'), 'aria-label': t('action.dismiss'), onClick: onClose,
+            }, '×')),
+          h('div', { className: 'stk-modal-body stk-memory-body' },
+            errorNode,
+            h('section', { className: 'stk-memory-section', 'aria-label': t('memory.factsTitle') },
+              h('div', { className: 'stk-memory-section-head' },
+                h('span', { className: 'stk-memory-section-title' }, t('memory.factsTitle')),
+                h('span', { className: 'stk-memory-section-count' }, String(facts.length))),
+              facts.length === 0 ? h('div', { className: 'stk-memory-empty' }, t('memory.emptyFacts')) : h('ul', { className: 'stk-memory-list' }, factItems),
+              factForm),
+            h('section', { className: 'stk-memory-section', 'aria-label': t('memory.reviewTitle') },
+              h('div', { className: 'stk-memory-section-head' },
+                h('span', { className: 'stk-memory-section-title' }, t('memory.reviewTitle')),
+                h('button', {
+                  type: 'button', className: 'stk-btn', disabled: isBusy,
+                  onClick: onGenerateReview,
+                }, busy === 'review' ? t('memory.reviewing') : t('memory.generateReview'))),
+              review === null
+                ? h('div', { className: 'stk-memory-empty' }, t('memory.reviewHint'))
+                : h('div', { className: 'stk-memory-review' },
+                    h('div', { className: 'stk-ai-result-head' },
+                      h('span', { className: 'stk-ai-summary' }, String(review.headline ?? '')),
+                      h('span', { className: 'stk-chip stk-chip--plan' }, t(review.source === 'fallback' ? 'ai.source.fallback' : 'ai.source.model'))),
+                    h('div', { className: 'stk-memory-stats' }, statChips),
+                    highlights.length === 0 ? null : h('div', { className: 'stk-memory-block' },
+                      h('div', { className: 'stk-hint' }, t('memory.highlights')),
+                      h('ul', { className: 'stk-memory-list' },
+                        highlights.map((line, index) => h('li', { className: 'stk-memory-item', key: `highlight-${index}` },
+                          h('span', { className: 'stk-memory-text' }, line))))),
+                    tips.length === 0 ? null : h('div', { className: 'stk-memory-block' },
+                      h('div', { className: 'stk-hint' }, t('memory.tips')),
+                      h('ul', { className: 'stk-memory-list' },
+                        tips.map((tip, index) => h('li', { className: 'stk-memory-item', key: `tip-${index}` },
+                          h('span', { className: 'stk-memory-text' }, String(tip.text)))))))),
+            h('section', { className: 'stk-memory-section', 'aria-label': t('memory.candidatesTitle') },
+              h('div', { className: 'stk-memory-section-head' },
+                h('span', { className: 'stk-memory-section-title' }, t('memory.candidatesTitle')),
+                h('button', {
+                  type: 'button', className: 'stk-btn', disabled: isBusy,
+                  onClick: onFindCandidates,
+                }, busy === 'candidates' ? t('memory.finding') : t('memory.findCandidates'))),
+              h('div', { className: 'stk-hint' }, t('memory.candidatesHint')),
+              candidateList)),
+          h('div', { className: 'stk-modal-foot' },
+            h('button', {
+              type: 'button',
+              className: `stk-btn stk-btn--danger${clearArmed ? ' stk-btn--danger-armed' : ''}`,
+              disabled: isBusy, onClick: onClearMemory,
+            }, clearArmed ? t('memory.clearConfirm') : t('memory.clear')),
+            h('span', { className: 'stk-grow' }),
+            h('button', { type: 'button', className: 'stk-btn', onClick: onClose }, t('action.dismiss')))))
+    }
 
     /**
      * Frame-wide floating reminder card rendered into `shell.overlay`, so a timed reminder
@@ -1408,6 +1639,43 @@ window.__ModuleLoader__.load({
 .stk-chip--list{color:var(--dsw-alias-label-secondary);border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2)}
 .stk-chip--list.stk-chip--tag:hover{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-bg-layer-2)}
 .stk-chip--list.stk-chip--plan{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);background:rgba(77,107,254,.1)}
+/* ---------------------------------------------------------- memory dialog */
+.stk-modal--memory{width:min(640px,100%)}
+.stk-memory-body{gap:14px}
+.stk-memory-section{display:flex;flex-direction:column;gap:8px;padding:12px 13px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1)}
+.stk-memory-section-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.stk-memory-section-title{font-size:13px;font-weight:650;color:var(--dsw-alias-label-primary)}
+.stk-memory-section-count{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:17px;padding:0 6px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);font-size:10.5px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.stk-memory-section-head .stk-btn{margin-left:auto}
+.stk-memory-empty{padding:10px 4px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.stk-memory-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.stk-memory-item{display:flex;align-items:center;gap:9px;min-width:0;padding:7px 9px;border:1px solid var(--dsw-alias-border-l1);border-radius:9px;background:var(--dsw-alias-bg-layer-2)}
+.stk-memory-text{flex:1 1 auto;min-width:0;font-size:12.5px;line-height:1.5;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere}
+.stk-memory-actions{display:flex;gap:6px;flex:0 0 auto;margin-left:auto}
+.stk-mini-btn{width:24px;height:24px;padding:0;display:grid;place-items:center;border:1px solid var(--dsw-alias-border-l2);border-radius:50%;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;font-size:11px;line-height:1;cursor:pointer;transition:transform .14s ease,border-color .14s ease,color .14s ease}
+.stk-mini-btn:hover:not(:disabled){transform:scale(1.08);border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}
+.stk-mini-btn--danger:hover:not(:disabled){border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}
+.stk-mini-btn:disabled{opacity:.5;cursor:default}
+.stk-memory-edit{display:flex;flex-direction:column;gap:7px;flex:1 1 auto;min-width:0}
+.stk-memory-form{display:flex;align-items:center;gap:8px;margin-top:2px}
+.stk-memory-form .stk-field-input{flex:1 1 auto}
+.stk-memory-review{display:flex;flex-direction:column;gap:9px}
+.stk-memory-stats{display:flex;flex-wrap:wrap;gap:6px}
+.stk-memory-stat{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-2);font-size:11px;color:var(--dsw-alias-label-secondary)}
+.stk-memory-stat-value{font-weight:600;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
+.stk-memory-stat-label{color:var(--dsw-alias-label-secondary)}
+.stk-memory-block{display:flex;flex-direction:column;gap:4px}
+.stk-memory-block .stk-memory-item{padding:5px 9px}
+.stk-memory-candidates{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}
+.stk-memory-candidate{display:flex;flex-direction:column;gap:5px;padding:9px 10px;border:1px dashed var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2)}
+.stk-memory-candidate-text{font-size:12.5px;font-weight:550;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere}
+.stk-memory-candidate-reason{font-size:11px;line-height:1.5;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
+.stk-memory-candidate .stk-memory-actions{margin-left:0}
+.stk-btn--danger{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary);background:transparent}
+.stk-btn--danger:hover:not(:disabled){border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary);background:rgba(214,69,69,.1)}
+.stk-btn--danger-armed{background:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary);color:#fff}
+.stk-chip--postpone{border-color:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-state-warn-primary);background:rgba(224,150,32,.12)}
+.stk-chip--list.stk-chip--postpone{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary);background:rgba(224,150,32,.12)}
 /* -------------------------------------------------------------- keyframes */
 @keyframes stk-rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes stk-fade{from{opacity:0}to{opacity:1}}
@@ -1484,6 +1752,17 @@ window.__ModuleLoader__.load({
       const [view, setView] = useState(readStoredView) // notes = sticky board (default) | list = minimal rows
       const [viewMenuOpen, setViewMenuOpen] = useState(false)
       const [expandedId, setExpandedId] = useState(null) // minimal-list row expanded in place (session only)
+      // v1.7.0 memory dialog state (facts / weekly review / candidates / two-step clear)
+      const [memoryOpen, setMemoryOpen] = useState(false)
+      const [memoryClosing, setMemoryClosing] = useState(false)
+      const [factsDraft, setFactsDraft] = useState('')
+      const [factsEditingId, setFactsEditingId] = useState(null)
+      const [factsEditDraft, setFactsEditDraft] = useState('')
+      const [memoryError, setMemoryError] = useState(null)
+      const [memoryBusy, setMemoryBusy] = useState(null) // remember | updateFact | forget | review | candidates | clear
+      const [memoryReview, setMemoryReview] = useState(null)
+      const [memoryCandidates, setMemoryCandidates] = useState(null) // null = not fetched yet
+      const [memoryArmClear, setMemoryArmClear] = useState(false)
 
       // Effective translator + Intl locale: forced zh/en use the panel dictionaries and a fixed
       // locale, `auto` keeps following the DSH locale (including live changes).
@@ -1581,20 +1860,28 @@ window.__ModuleLoader__.load({
         return () => window.clearTimeout(timer)
       }, [focusedId])
 
-      // Escape closes whichever surface is open (dialog first, then a header menu).
+      // The 清空记忆 button uses the same two-step confirm window as note deletion.
       useEffect(() => {
-        if (editor === null && adviceDialog === null && !fontMenuOpen && !langMenuOpen && !viewMenuOpen) return undefined
+        if (!memoryArmClear) return undefined
+        const timer = window.setTimeout(() => setMemoryArmClear(false), DELETE_ARM_MS)
+        return () => window.clearTimeout(timer)
+      }, [memoryArmClear])
+
+      // Escape closes whichever surface is open (dialogs first, then a header menu).
+      useEffect(() => {
+        if (editor === null && adviceDialog === null && !memoryOpen && !fontMenuOpen && !langMenuOpen && !viewMenuOpen) return undefined
         const onKeyDown = (event) => {
           if (event.key !== 'Escape') return
           if (editor !== null) closeEditor()
           else if (adviceDialog !== null) closeAdviceDialog()
+          else if (memoryOpen) closeMemory()
           else if (fontMenuOpen) setFontMenuOpen(false)
           else if (langMenuOpen) setLangMenuOpen(false)
           else setViewMenuOpen(false)
         }
         window.addEventListener('keydown', onKeyDown)
         return () => window.removeEventListener('keydown', onKeyDown)
-      }, [editor, adviceDialog, fontMenuOpen, langMenuOpen, viewMenuOpen])
+      }, [editor, adviceDialog, memoryOpen, fontMenuOpen, langMenuOpen, viewMenuOpen])
 
       // A click anywhere outside the font / language / view menus closes it.
       useEffect(() => {
@@ -1617,6 +1904,10 @@ window.__ModuleLoader__.load({
       const ai = snapshot?.ai ?? null
       const todoById = useMemo(() => new Map(todos.map((todo) => [String(todo.id), todo])), [todos])
       const hasPlan = todos.some((todo) => todo.planAt)
+
+      // v1.7.0 memory context; an older Host sends no memory block, so all of this stays empty.
+      const memory = snapshot?.memory ?? null
+      const memoryFacts = useMemo(() => memoryFactsOf(memory), [memory])
 
       // Tags currently in use, counted client-side across every note on the board.
       const tagStats = useMemo(() => countTags(todos.map(todoTags)), [todos])
@@ -1680,6 +1971,7 @@ window.__ModuleLoader__.load({
       function openCreateEditor() {
         setArmedId(null)
         setAdviceDialog(null)
+        setMemoryOpen(false)
         setFontMenuOpen(false)
         setLangMenuOpen(false)
         setViewMenuOpen(false)
@@ -1690,6 +1982,7 @@ window.__ModuleLoader__.load({
       function openNoteEditor(todo) {
         setArmedId(null)
         setAdviceDialog(null)
+        setMemoryOpen(false)
         setFontMenuOpen(false)
         setLangMenuOpen(false)
         setViewMenuOpen(false)
@@ -1780,6 +2073,194 @@ window.__ModuleLoader__.load({
         setExpandedId(null)
       }
 
+      /* -------------------------------------------------- memory (v1.7.0) */
+
+      /** Map a failed memory action onto the dialog's inline error text. */
+      function memoryFailureText(result) {
+        const unknownAction = result?.error?.code === 'unknown_action'
+        return unknownAction ? tRef.current('ai.needRestart') : (result?.error?.message || tRef.current('error.generic'))
+      }
+
+      function openMemory() {
+        setEditor(null)
+        setAdviceDialog(null)
+        setFontMenuOpen(false)
+        setLangMenuOpen(false)
+        setViewMenuOpen(false)
+        setMemoryError(null)
+        setMemoryArmClear(false)
+        setMemoryOpen(true)
+      }
+
+      /** Close the memory dialog with the shared exit animation. */
+      function closeMemory() {
+        if (!memoryOpen || memoryClosing) return
+        setMemoryClosing(true)
+        window.setTimeout(() => {
+          if (!mountedRef.current) return
+          setMemoryOpen(false)
+          setMemoryClosing(false)
+          setMemoryArmClear(false)
+          setFactsEditingId(null)
+          setMemoryError(null)
+        }, DIALOG_CLOSE_MS)
+      }
+
+      async function rememberFact() {
+        const text = String(factsDraft ?? '').trim()
+        if (text === '') {
+          setMemoryError(tRef.current('error.emptyText'))
+          return
+        }
+        if (memoryBusy !== null) return
+        setMemoryBusy('remember')
+        setMemoryError(null)
+        const result = await apiPost('remember', { text })
+        if (!mountedRef.current) return
+        setMemoryBusy(null)
+        if (!result.ok) {
+          // Duplicate / too-long facts come back as invalid_input with the Host's wording.
+          setMemoryError(memoryFailureText(result))
+          return
+        }
+        setFactsDraft('')
+        pushToast(tRef.current('memory.saved'), 'ok')
+        void refresh(true)
+      }
+
+      function startFactEdit(fact) {
+        setFactsEditingId(fact.id)
+        setFactsEditDraft(String(fact.text ?? ''))
+        setMemoryError(null)
+      }
+
+      function cancelFactEdit() {
+        setFactsEditingId(null)
+        setFactsEditDraft('')
+      }
+
+      async function saveFactEdit() {
+        if (factsEditingId === null || memoryBusy !== null) return
+        const text = String(factsEditDraft ?? '').trim()
+        if (text === '') {
+          setMemoryError(tRef.current('error.emptyText'))
+          return
+        }
+        setMemoryBusy('updateFact')
+        setMemoryError(null)
+        const result = await apiPost('updateFact', { id: factsEditingId, text })
+        if (!mountedRef.current) return
+        setMemoryBusy(null)
+        if (!result.ok) {
+          setMemoryError(memoryFailureText(result))
+          return
+        }
+        cancelFactEdit()
+        pushToast(tRef.current('memory.saved'), 'ok')
+        void refresh(true)
+      }
+
+      async function forgetFact(fact) {
+        if (memoryBusy !== null) return
+        setMemoryBusy('forget')
+        setMemoryError(null)
+        const result = await apiPost('forget', { id: fact.id })
+        if (!mountedRef.current) return
+        setMemoryBusy(null)
+        if (!result.ok) {
+          setMemoryError(memoryFailureText(result))
+          return
+        }
+        if (factsEditingId === fact.id) cancelFactEdit()
+        void refresh(true)
+      }
+
+      async function generateMemoryReview() {
+        if (memoryBusy !== null) return
+        setMemoryBusy('review')
+        setMemoryError(null)
+        const result = await apiPost('review', {})
+        if (!mountedRef.current) return
+        setMemoryBusy(null)
+        if (!result.ok) {
+          setMemoryError(memoryFailureText(result))
+          return
+        }
+        const review = result.data?.review
+        setMemoryReview(review && typeof review === 'object' ? review : null)
+      }
+
+      async function findMemoryCandidates() {
+        if (memoryBusy !== null) return
+        setMemoryBusy('candidates')
+        setMemoryError(null)
+        const result = await apiPost('memoryCandidates', {})
+        if (!mountedRef.current) return
+        setMemoryBusy(null)
+        if (!result.ok) {
+          setMemoryError(memoryFailureText(result))
+          return
+        }
+        const raw = result.data?.candidates
+        const list = Array.isArray(raw)
+          ? raw
+            .filter((candidate) => candidate && typeof candidate.text === 'string')
+            .map((candidate) => ({
+              text: candidate.text.trim(),
+              reason: typeof candidate.reason === 'string' ? candidate.reason.trim() : '',
+            }))
+            .filter((candidate) => candidate.text !== '')
+            .slice(0, 5)
+          : []
+        setMemoryCandidates(list)
+      }
+
+      async function rememberCandidate(candidate, index) {
+        if (memoryBusy !== null) return
+        const text = String(candidate?.text ?? '').trim()
+        if (text === '') return
+        setMemoryBusy('remember')
+        setMemoryError(null)
+        const result = await apiPost('remember', { text })
+        if (!mountedRef.current) return
+        setMemoryBusy(null)
+        if (!result.ok) {
+          setMemoryError(memoryFailureText(result))
+          return
+        }
+        setMemoryCandidates((previous) => (Array.isArray(previous) ? previous.filter((_, position) => position !== index) : previous))
+        pushToast(tRef.current('memory.saved'), 'ok')
+        void refresh(true)
+      }
+
+      /** Dismissing a candidate is purely local: the Host never stored the proposal. */
+      function ignoreCandidate(index) {
+        setMemoryCandidates((previous) => (Array.isArray(previous) ? previous.filter((_, position) => position !== index) : previous))
+      }
+
+      async function clearMemory() {
+        if (memoryBusy !== null) return
+        if (!memoryArmClear) {
+          setMemoryArmClear(true)
+          return
+        }
+        setMemoryArmClear(false)
+        setMemoryBusy('clear')
+        setMemoryError(null)
+        const result = await apiPost('clearMemory', {})
+        if (!mountedRef.current) return
+        setMemoryBusy(null)
+        if (!result.ok) {
+          setMemoryError(memoryFailureText(result))
+          return
+        }
+        setMemoryReview(null)
+        setMemoryCandidates(null)
+        setFactsEditingId(null)
+        pushToast(tRef.current('memory.cleared'), 'ok')
+        void refresh(true)
+      }
+
       /* -------------------------------------------------- per-note AI advice */
 
       /**
@@ -1830,13 +2311,41 @@ window.__ModuleLoader__.load({
 
       function openNoteAdvice(todo) {
         setEditor(null)
+        setMemoryOpen(false)
         setFontMenuOpen(false)
         setLangMenuOpen(false)
         setViewMenuOpen(false)
+        const id = String(todo.id)
+        // v1.7.0: a stored thread resumes instead of starting over; the fresh path keeps the
+        // existing three-round conversation behaviour.
+        const thread = threadOf(memory, id)
+        const storedAdvice = thread && thread.advice && typeof thread.advice.text === 'string' && thread.advice.text !== ''
+          ? thread.advice
+          : null
+        const history = threadHistory(thread)
+        if (storedAdvice !== null) {
+          setAdviceDialog({
+            id,
+            title: String(todo.text ?? ''),
+            history,
+            phase: 'advice',
+            question: '',
+            options: [],
+            answer: '',
+            adviceText: storedAdvice.text,
+            adviceOptions: [],
+            source: typeof storedAdvice.source === 'string' ? storedAdvice.source : null,
+            round: history.length,
+            busy: false,
+            error: null,
+            resumed: true,
+          })
+          return
+        }
         const dialog = {
-          id: String(todo.id),
+          id,
           title: String(todo.text ?? ''),
-          history: [],
+          history,
           phase: null,
           question: '',
           options: [],
@@ -1844,12 +2353,21 @@ window.__ModuleLoader__.load({
           adviceText: '',
           adviceOptions: [],
           source: null,
-          round: 0,
+          round: history.length,
           busy: true,
           error: null,
+          resumed: false,
         }
         setAdviceDialog(dialog)
-        void requestNoteAdvice(dialog.id, [])
+        void requestNoteAdvice(dialog.id, history)
+      }
+
+      /** 继续聊聊: re-request the coach using the stored Q&A rounds as history. */
+      function continueAdviceThread() {
+        if (adviceDialog === null || adviceDialog.busy) return
+        const history = Array.isArray(adviceDialog.history) ? adviceDialog.history : []
+        setAdviceDialog((previous) => (previous === null ? previous : { ...previous, busy: true, error: null }))
+        void requestNoteAdvice(adviceDialog.id, history)
       }
 
       function changeAdviceAnswer(event) {
@@ -2074,6 +2592,10 @@ window.__ModuleLoader__.load({
             },
           }, `${view === 'list' ? '☰' : '▤'} ${t(`view.${view}`)}`),
           viewMenu)
+        const memoryButton = h('button', {
+          type: 'button', className: 'stk-btn stk-memory-btn',
+          title: t('memory.button'), 'aria-label': t('memory.button'), onClick: openMemory,
+        }, `🧠 ${t('memory.button')}`)
         return h('header', { className: 'stk-header' },
           h('div', { className: 'stk-heading' },
             h('div', { className: 'stk-title' }, t('panel.title')),
@@ -2084,6 +2606,7 @@ window.__ModuleLoader__.load({
             fontButton,
             langButton,
             viewButton,
+            memoryButton,
             h('button', { type: 'button', className: 'stk-btn', disabled: busy || loading, onClick: () => void refresh() }, t('action.refresh')),
             doneButton,
             desktop))
@@ -2226,6 +2749,7 @@ window.__ModuleLoader__.load({
         return list.map((todo, index) => h(NoteCard, {
           key: String(todo.id), todo, t, nowIso, localeId: activeLocale, busy,
           delay: baseDelay + index,
+          postponeCount: postponeCountOf(memory, todo.id),
           armed: armedId === todo.id,
           focused: focusedId === String(todo.id),
           registerNode,
@@ -2248,6 +2772,7 @@ window.__ModuleLoader__.load({
           key: String(todo.id), todo, t, nowIso, localeId: activeLocale, busy,
           delay: index,
           expanded: expandedId === String(todo.id),
+          postponeCount: postponeCountOf(memory, todo.id),
           armed: armedId === todo.id,
           onToggle: () => void toggleNote(todo),
           onActivate: () => setExpandedId((current) => (current === String(todo.id) ? null : String(todo.id))),
@@ -2379,6 +2904,43 @@ window.__ModuleLoader__.load({
           onAdviceChange: changeAdviceText,
           onPickAlternative: pickAdviceAlternative,
           onAppend: () => void appendAdviceToNote(),
+          onContinue: continueAdviceThread,
+        })
+      }
+
+      function renderMemoryDialog() {
+        if (!memoryOpen) return null
+        return h(MemoryDialog, {
+          t,
+          facts: memoryFacts,
+          review: memoryReview,
+          candidates: memoryCandidates,
+          closing: memoryClosing,
+          busy: memoryBusy,
+          error: memoryError,
+          factDraft: factsDraft,
+          editingId: factsEditingId,
+          editDraft: factsEditDraft,
+          clearArmed: memoryArmClear,
+          onClose: closeMemory,
+          onFactDraftChange: (event) => {
+            setFactsDraft(event.target.value)
+            setMemoryError(null)
+          },
+          onRememberFact: () => void rememberFact(),
+          onEditFact: startFactEdit,
+          onEditDraftChange: (event) => {
+            setFactsEditDraft(event.target.value)
+            setMemoryError(null)
+          },
+          onSaveFactEdit: () => void saveFactEdit(),
+          onCancelFactEdit: cancelFactEdit,
+          onForgetFact: (fact) => void forgetFact(fact),
+          onGenerateReview: () => void generateMemoryReview(),
+          onFindCandidates: () => void findMemoryCandidates(),
+          onRememberCandidate: (candidate, index) => void rememberCandidate(candidate, index),
+          onIgnoreCandidate: ignoreCandidate,
+          onClearMemory: () => void clearMemory(),
         })
       }
 
@@ -2397,7 +2959,8 @@ window.__ModuleLoader__.load({
         renderFooter(),
         renderToast(),
         renderEditorDialog(),
-        renderAdviceDialog())
+        renderAdviceDialog(),
+        renderMemoryDialog())
     }
 
     /* ---------------------------------------------------------------- plugin */

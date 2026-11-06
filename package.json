@@ -1,12 +1,12 @@
 {
   "name": "dsh-sticker-todo",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
   },
   "type": "module",
-  "description": "Bilingual (中文 / English) sticker-style personal TODO panel in the DSH Web sidebar: sticky-board and minimal-list views, a note composer dialog, quick due dates, timed reminders, font choices, tag grouping, pick-or-type AI note advice, motion and a polished board.",
+  "description": "Bilingual (中文 / English) sticker-style personal TODO panel in the DSH Web sidebar: sticky-board and minimal-list views, a note composer dialog, quick due dates, timed reminders, font choices, tag grouping, pick-or-type AI note advice, motion and a polished board — plus a durable memory (event log, weekly review, remembered preferences and advice that survives restarts).",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kevin-qiao/dsh-todo.git"
@@ -22,7 +22,9 @@
     "todo",
     "sticky-notes",
     "bilingual",
-    "ai"
+    "ai",
+    "memory",
+    "weekly-review"
   ],
   "exports": {
     ".": "./index.js",

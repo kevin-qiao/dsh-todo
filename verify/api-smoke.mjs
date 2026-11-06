@@ -19,6 +19,10 @@
  * skips the store-wide `clearCompleted` path while the board holds finished notes.
  * v1.2.0: also covers the per-note `aiNoteAdvice` conversation (question/advice rounds,
  * the three-round cap, unknown id and bad history), SKIP-ped on a Host without it.
+ * v1.7.0: also covers the memory surface — the `state.memory` block, a clearly-marked
+ * temporary fact's remember / updateFact / forget round-trip, and the read-only `review`
+ * and `memoryCandidates` actions. Temp facts are always forgotten in cleanup; the checks
+ * never touch the user's own facts, threads, events or notes.
  *
  * Exit codes:
  *   0  all checks passed (skips allowed)
@@ -45,6 +49,8 @@ if (typeof fetch !== 'function' || typeof AbortController !== 'function') {
 
 const results = { pass: 0, fail: 0, skip: 0 };
 const createdIds = new Set();
+/** Temporary memory facts created by this run; forgotten in cleanup. */
+const createdFactIds = new Set();
 const state = {
   primaryId: null,
   openId: null,
@@ -241,6 +247,20 @@ function ensureOptions(value, label, { min, max, maxChars }) {
   return value;
 }
 
+/** Validate one v1.7.0 memory Fact (CONTRACT.md round 7). */
+function validateFact(fact, label) {
+  ensureObject(fact, label);
+  ensureString(fact.id, `${label}.id`);
+  ensure(/^m_[0-9a-z]{8}$/.test(fact.id), `${label}.id must be "m_" + 8 hex characters, got ${JSON.stringify(fact.id)}`);
+  ensureString(fact.text, `${label}.text`);
+  ensure([...fact.text].length <= 120, `${label}.text must be at most 120 characters`);
+  ensure(fact.text === fact.text.trim(), `${label}.text must be trimmed`);
+  ensure(fact.source === 'user', `${label}.source must be "user", got ${JSON.stringify(fact.source)}`);
+  ensureIso(fact.createdAt, `${label}.createdAt`);
+  ensureIso(fact.updatedAt, `${label}.updatedAt`);
+  return fact;
+}
+
 async function addTodo(params) {
   const response = await action('add', params);
   const todo = expectOkData(response, `add ${JSON.stringify(params.text ?? '')}`);
@@ -318,6 +338,28 @@ async function requireV12() {
 }
 
 /* ------------------------------------------------------------------ *
+ * v1.7.0 memory support (read-only capability probe)
+ * ------------------------------------------------------------------ */
+
+/** Cached v1.7.0 capability probe: true / false / null (not probed yet). */
+let v17Supported = null;
+
+/** Detect whether the running Host returns the v1.7.0 `state.memory` block. */
+async function detectV17() {
+  if (v17Supported !== null) return v17Supported;
+  const envelope = await requestState();
+  const memory = envelope?.data?.memory;
+  v17Supported = memory !== null && typeof memory === 'object' && !Array.isArray(memory);
+  return v17Supported;
+}
+
+async function requireV17() {
+  if (!(await detectV17())) {
+    throw new SkipCheck('the running Host predates v1.7.0 (no state.memory block) — restart DSH to load the new host code');
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * Cleanup
  * ------------------------------------------------------------------ */
 
@@ -339,6 +381,23 @@ async function cleanup() {
     if (await removeQuietly(id)) {
       createdIds.delete(id);
       cleanupRemoved += 1;
+    }
+  }
+
+  // Forget every temporary memory fact this run created (never the user's own facts).
+  for (const factId of [...createdFactIds]) {
+    try {
+      const response = await action('forget', { id: factId });
+      if (response.status === 200 && response.json?.ok === true) {
+        createdFactIds.delete(factId);
+        info(`[PASS] cleanup: forgot temporary memory fact ${factId}`);
+      } else {
+        cleanupFailed += 1;
+        info(`[FAIL] cleanup: could not forget temporary memory fact ${factId} — HTTP ${response.status} ${truncate(response.text)}`);
+      }
+    } catch (error) {
+      cleanupFailed += 1;
+      info(`[FAIL] cleanup: forget temporary memory fact failed — ${error.message}`);
     }
   }
   // clearCompleted is store-wide, so only use it when the board held no finished notes
@@ -749,6 +808,128 @@ function registerChecks(initialEnvelope) {
         ensure(envelope.error?.code === 'invalid_input', `expected invalid_input, got ${JSON.stringify(envelope.error?.code)}`);
       }
       return `${cases.length} case(s) rejected`;
+    }],
+
+    /* --------------------------- v1.7.0: memory --------------------------- */
+
+    ['GET /state -> memory block (facts / stats / postpones / threads)', async () => {
+      await requireV17();
+      const envelope = await requestState();
+      const data = ensureObject(envelope.data, 'state.data');
+      const memory = ensureObject(data.memory, 'state.memory');
+      ensureArray(memory.facts, 'state.memory.facts')
+        .forEach((fact, index) => validateFact(fact, `state.memory.facts[${index}]`));
+      const stats = ensureObject(memory.stats, 'state.memory.stats');
+      for (const key of ['open', 'done', 'overdue', 'averageOpenAgeDays']) {
+        ensureNumber(stats[key], `state.memory.stats.${key}`);
+      }
+      const week = ensureObject(stats.week, 'state.memory.stats.week');
+      for (const key of ['completed', 'created', 'postponed', 'removed']) {
+        ensureNumber(week[key], `state.memory.stats.week.${key}`);
+      }
+      const postpones = ensureObject(memory.postpones, 'state.memory.postpones');
+      for (const [id, count] of Object.entries(postpones)) {
+        ensureString(id, 'state.memory.postpones id');
+        ensureNumber(count, `state.memory.postpones[${id}]`);
+        ensure(count >= 1, `state.memory.postpones[${id}] must be >= 1, got ${JSON.stringify(count)}`);
+      }
+      ensureObject(memory.threads, 'state.memory.threads');
+      const todos = ensureArray(data.todos, 'state.data.todos');
+      for (const todo of todos) {
+        for (const leaked of ['memory', 'facts', 'threads', 'postpones']) {
+          ensure(!(leaked in todo), `the Todo shape must not gain a "${leaked}" member (memory is a sibling object)`);
+        }
+      }
+      return `facts=${memory.facts.length}, week=${JSON.stringify(week)}`;
+    }],
+
+    ['action remember / updateFact / forget round-trip with a clearly-marked temp fact', async () => {
+      await requireV17();
+      const marker = `verify: temp memory ${Date.now()}`;
+      const created = expectOkData(await action('remember', { text: marker }), 'remember temp fact');
+      const fact = validateFact(ensureObject(created, 'remember result'), 'remember result');
+      createdFactIds.add(fact.id);
+      ensure(fact.text === marker, `remember text echo mismatch: ${JSON.stringify(fact.text)}`);
+
+      let envelope = await requestState();
+      let facts = ensureArray(envelope?.data?.memory?.facts, 'state.memory.facts');
+      ensure(facts.some((entry) => entry.id === fact.id), 'the remembered fact must appear in state.memory.facts');
+      ensure(facts[0]?.id === fact.id, 'state.memory.facts must be newest first');
+
+      const duplicate = await action('remember', { text: marker });
+      const duplicateEnvelope = requireEnvelope(duplicate, 'remember duplicate');
+      ensure(duplicateEnvelope.ok === false, `a duplicate fact must be rejected, got ok=${JSON.stringify(duplicateEnvelope.ok)}`);
+      ensure(
+        duplicateEnvelope.error?.code === 'invalid_input',
+        `a duplicate fact must fail with invalid_input, got ${JSON.stringify(duplicateEnvelope.error?.code)}`,
+      );
+
+      const renamed = `${marker} (updated)`;
+      const updated = validateFact(expectOkData(await action('updateFact', { id: fact.id, text: renamed }), 'updateFact'), 'updateFact result');
+      ensure(updated.id === fact.id && updated.text === renamed, `updateFact echo mismatch: ${JSON.stringify(updated)}`);
+
+      const forgotten = expectOkData(await action('forget', { id: fact.id }), 'forget temp fact');
+      createdFactIds.delete(fact.id);
+      ensure(forgotten.forgotten === fact.id, `forget must echo the id, got ${JSON.stringify(forgotten.forgotten)}`);
+      envelope = await requestState();
+      facts = ensureArray(envelope?.data?.memory?.facts, 'state.memory.facts');
+      ensure(!facts.some((entry) => entry.id === fact.id), 'the forgotten temp fact must disappear from state');
+      return `temp fact ${fact.id} created, updated, forgotten`;
+    }],
+
+    ['action review / memoryCandidates return shapes and write nothing', async () => {
+      await requireV17();
+      const before = await requestState();
+      const beforeData = ensureObject(before.data, 'state before review');
+
+      const reviewData = expectOkData(await action('review', {}, AI_TIMEOUT_MS), 'review');
+      const review = ensureObject(reviewData.review, 'review.review');
+      ensureString(review.headline, 'review.headline', { nonEmpty: false });
+      ensure([...review.headline].length <= 100, 'review.headline must be at most 100 characters');
+      const range = ensureObject(review.range, 'review.range');
+      ensureIso(range.from, 'review.range.from');
+      ensureIso(range.to, 'review.range.to');
+      ensure(range.days === 7, `review.range.days must be 7, got ${JSON.stringify(range.days)}`);
+      const stats = ensureObject(review.stats, 'review.stats');
+      for (const key of ['completed', 'created', 'postponed', 'removed', 'open', 'overdue']) {
+        ensureNumber(stats[key], `review.stats.${key}`);
+      }
+      const highlights = ensureArray(review.highlights, 'review.highlights');
+      ensure(highlights.length <= 4, `review.highlights must hold at most 4 entries, got ${highlights.length}`);
+      highlights.forEach((line, index) => ensureString(line, `review.highlights[${index}]`));
+      const tips = ensureArray(review.tips, 'review.tips');
+      ensure(tips.length <= 3, `review.tips must hold at most 3 entries, got ${tips.length}`);
+      tips.forEach((tip, index) => {
+        ensureObject(tip, `review.tips[${index}]`);
+        ensureString(tip.text, `review.tips[${index}].text`);
+        ensure(ADVICE_KINDS.includes(tip.kind), `review.tips[${index}].kind must be one of ${ADVICE_KINDS.join('|')}, got ${JSON.stringify(tip.kind)}`);
+      });
+      ensure(AI_SOURCES.includes(review.source), `review.source must be model|fallback, got ${JSON.stringify(review.source)}`);
+      ensureIso(review.generatedAt, 'review.generatedAt');
+
+      const candidatesData = expectOkData(await action('memoryCandidates', {}, AI_TIMEOUT_MS), 'memoryCandidates');
+      const candidates = ensureArray(candidatesData.candidates, 'memoryCandidates.candidates');
+      ensure(candidates.length <= 5, `memoryCandidates.candidates must hold at most 5 entries, got ${candidates.length}`);
+      for (const [index, candidate] of candidates.entries()) {
+        ensureObject(candidate, `memoryCandidates.candidates[${index}]`);
+        ensureString(candidate.text, `memoryCandidates.candidates[${index}].text`);
+        ensure([...candidate.text].length <= 60, `memoryCandidates.candidates[${index}].text must be at most 60 characters`);
+        ensureString(candidate.reason, `memoryCandidates.candidates[${index}].reason`);
+        ensure([...candidate.reason].length <= 80, `memoryCandidates.candidates[${index}].reason must be at most 80 characters`);
+      }
+      ensure(AI_SOURCES.includes(candidatesData.source), `memoryCandidates.source must be model|fallback, got ${JSON.stringify(candidatesData.source)}`);
+      ensureIso(candidatesData.generatedAt, 'memoryCandidates.generatedAt');
+
+      // Both actions are read-only: the board and the stored memory must be untouched.
+      const after = await requestState();
+      const afterData = ensureObject(after.data, 'state after review');
+      ensure(JSON.stringify(afterData.todos) === JSON.stringify(beforeData.todos), 'review/memoryCandidates must not change the notes');
+      ensure(JSON.stringify(afterData.memory?.facts) === JSON.stringify(beforeData.memory?.facts), 'review/memoryCandidates must not store facts');
+      ensure(
+        JSON.stringify(afterData.memory?.threads) === JSON.stringify(beforeData.memory?.threads),
+        'review/memoryCandidates must not change advice threads',
+      );
+      return `review(source=${review.source}), candidates=${candidates.length}`;
     }],
 
     ['unknown action -> ok:false, unknown_action', async () => {

@@ -15,6 +15,9 @@
  *   3. locale/en.json + locale/zh.json — metadata completeness, locale-differentiated text.
  *   4. icon.svg — present, SVG-ish, within the 256 KiB limit.
  *   5. node --check on every .js file in the bundle root and lib/ (verify/ excluded).
+ *   6. v1.7.0 memory release — version 1.7.0, zero runtime dependencies, the memory
+ *      actions / store / AI / tool / client strings, and the CONTRACT + docs/MEMORY.md
+ *      documentation are all present.
  *
  * Files that other teammates may still be writing (client.js, lib/ai.js, README.md)
  * are reported as NOTE rather than FAIL while they are genuinely absent, so this
@@ -275,6 +278,20 @@ function checkManifest() {
   if (typeof pkg.version === 'string' && /^\d+\.\d+\.\d+/.test(pkg.version)) pass('version', pkg.version);
   else fail('version', `expected a semver string, got ${JSON.stringify(pkg.version)}`);
 
+  // v1.7.0 is the memory release; the version is asserted exactly so docs and
+  // CHANGELOG entries cannot drift from the manifest.
+  if (pkg.version === '1.7.0') pass('version is 1.7.0 (memory release)');
+  else fail('version is 1.7.0 (memory release)', `expected "1.7.0", got ${JSON.stringify(pkg.version)}`);
+
+  // The plugin must stay dependency-free: everything runs on Node built-ins.
+  const dependencyFields = ['dependencies', 'peerDependencies', 'optionalDependencies'];
+  const declared = dependencyFields.flatMap((field) => {
+    const value = pkg[field];
+    return value && typeof value === 'object' ? Object.keys(value).map((name) => `${field}:${name}`) : [];
+  });
+  if (declared.length === 0) pass('zero runtime dependencies');
+  else fail('zero runtime dependencies', `declared: ${declared.join(', ')}`);
+
   if (pkg.private === true) fail('publishable', 'package.json must not be private when publishing to npm');
   else pass('publishable', 'not private');
 
@@ -517,6 +534,111 @@ function checkIcon() {
 }
 
 /* ------------------------------------------------------------------ *
+ * 4b. v1.7.0 memory release
+ * ------------------------------------------------------------------ */
+
+/** Report one "all of these needles are present" check. */
+function checkContains(label, text, needles) {
+  const absent = needles.filter((needle) => !text.includes(needle));
+  if (absent.length === 0) pass(label, `${needles.length} marker(s)`);
+  else fail(label, `missing: ${absent.join(', ')}`);
+}
+
+function checkMemoryRelease() {
+  section('v1.7.0 memory release');
+
+  // Host HTTP actions ------------------------------------------------
+  const indexRead = readText('index.js');
+  if (indexRead.missing) { fail('index.js exists for the memory release', 'file not found'); return; }
+  if (!indexRead.ok) { fail('index.js is readable', indexRead.error); return; }
+  const memoryActions = ['remember', 'updateFact', 'forget', 'review', 'memoryCandidates', 'clearMemory'];
+  const missingActions = memoryActions.filter((name) => !new RegExp(`case '${name}':`).test(indexRead.text));
+  if (missingActions.length === 0) pass('index.js implements the six memory actions', memoryActions.join(' / '));
+  else fail('index.js implements the six memory actions', `missing: ${missingActions.join(', ')}`);
+  checkContains('index.js exposes the state.memory block', indexRead.text, ['memory: store.memory()']);
+  checkContains('index.js builds the AI memory context', indexRead.text, ['memoryContext', 'lastAdvice']);
+
+  // Store: document v2 + memory API ---------------------------------
+  const storeRead = readText('lib/store.js');
+  if (storeRead.missing) { fail('lib/store.js exists for the memory release', 'file not found'); }
+  else if (!storeRead.ok) { fail('lib/store.js is readable', storeRead.error); }
+  else {
+    checkContains('lib/store.js persists document v2', storeRead.text, ['const VERSION = 2', 'events:', 'memory:', 'facts:', 'threads:']);
+    checkContains('lib/store.js implements the memory API', storeRead.text, [
+      'async function addFact(', 'async function updateFact(', 'async function forgetFact(',
+      'async function saveThread(', 'async function clearMemory(',
+      'export function deriveStats(', 'export function derivePostpones(', 'export function duePostponed(',
+    ]);
+    checkContains('lib/store.js migrates / removes history safely', storeRead.text, ['MEMORY_LIMITS', 'events: 2000', 'facts: 50', 'threads: 200', 'parsed?.events', 'parsed?.memory']);
+  }
+
+  // AI layer: pure helpers + review / memoryCandidates --------------
+  const aiRead = readText('lib/ai.js');
+  if (aiRead.missing) { fail('lib/ai.js exists for the memory release', 'file not found'); }
+  else if (!aiRead.ok) { fail('lib/ai.js is readable', aiRead.error); }
+  else {
+    checkContains('lib/ai.js exports the memory pure helpers', aiRead.text, [
+      'export function memoryPromptBlock(', 'export function heuristicReview(', 'export function normalizeReview(',
+      'export function heuristicMemoryCandidates(', 'export function normalizeMemoryCandidates(',
+    ]);
+    checkContains('lib/ai.js wires review / memoryCandidates into the layer', aiRead.text, [
+      'async review(input)', 'async memoryCandidates(input)', 'async noteAdvice(todo, history = [], memory = null)',
+    ]);
+  }
+
+  // Tool: four memory actions + memory echo -------------------------
+  const toolsRead = readText('lib/tools.js');
+  if (toolsRead.missing) { fail('lib/tools.js exists for the memory release', 'file not found'); }
+  else if (!toolsRead.ok) { fail('lib/tools.js is readable', toolsRead.error); }
+  else {
+    const actionsMatch = /const ACTIONS = \[([\s\S]*?)\]/.exec(toolsRead.text);
+    if (!actionsMatch) fail('lib/tools.js declares the tool action list', 'ACTIONS array not found');
+    else {
+      const declared = [...actionsMatch[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
+      const missingToolActions = ['remember', 'forget', 'memories', 'review'].filter((name) => !declared.includes(name));
+      if (missingToolActions.length === 0) pass('lib/tools.js exposes the four memory tool actions', declared.length + ' actions');
+      else fail('lib/tools.js exposes the four memory tool actions', `missing: ${missingToolActions.join(', ')}`);
+    }
+    checkContains('lib/tools.js echoes the memory on read results', toolsRead.text, ['memory: { facts: memoryFacts', 'state.memory?.stats']);
+  }
+
+  // Client: dialog strings, dialog component, postpone badge --------
+  const clientRead = readText('client.js');
+  if (clientRead.missing) { fail('client.js exists for the memory release', 'file not found'); }
+  else if (!clientRead.ok) { fail('client.js is readable', clientRead.error); }
+  else {
+    const memoryKeys = [
+      'memory.button', 'memory.title', 'memory.factsTitle', 'memory.reviewTitle', 'memory.candidatesTitle',
+      'memory.clear', 'memory.clearConfirm', 'memory.postponeTimes', 'memory.continueThread',
+      'memory.stats.completed', 'memory.stats.postponed',
+    ];
+    const missingKeys = memoryKeys.filter((key) => !clientRead.text.includes(`'${key}':`));
+    if (missingKeys.length === 0) pass('client.js ships the memory dialog + postpone badge strings', `${memoryKeys.length} keys`);
+    else fail('client.js ships the memory dialog + postpone badge strings', `missing: ${missingKeys.join(', ')}`);
+    checkContains('client.js renders the memory dialog and the postponement badge', clientRead.text, [
+      'function MemoryDialog(', 'stk-modal--memory', 'stk-memory-section', 'stk-chip--postpone', 'threadHistory(',
+    ]);
+  }
+
+  // Documentation ---------------------------------------------------
+  const contractRead = readText('CONTRACT.md');
+  if (contractRead.missing) fail('CONTRACT.md documents round 7', 'file not found');
+  else if (!contractRead.ok) fail('CONTRACT.md is readable', contractRead.error);
+  else {
+    checkContains('CONTRACT.md documents round 7', contractRead.text, [
+      '## Round 7 (v1.7.0', '### Persisted document v2', '### Derived values', 'memoryCandidates', 'clearMemory',
+    ]);
+  }
+  const memoryDoc = readText('docs/MEMORY.md');
+  if (memoryDoc.missing) fail('docs/MEMORY.md documents the memory model', 'file not found');
+  else if (!memoryDoc.ok) fail('docs/MEMORY.md is readable', memoryDoc.error);
+  else if (memoryDoc.text.trim().length < 500) fail('docs/MEMORY.md documents the memory model', `suspiciously short (${memoryDoc.text.length} chars)`);
+  else {
+    checkContains('docs/MEMORY.md documents the memory model', memoryDoc.text, ['facts', 'threads', 'events', 'postpones', 'clearMemory']);
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * 5. JavaScript syntax via `node --check`
  * ------------------------------------------------------------------ */
 
@@ -652,6 +774,7 @@ function main() {
   checkPatch(pkg);
   checkLocales();
   checkIcon();
+  checkMemoryRelease();
 
   // Presence of the declared runtime files (in-flight files are notes while absent).
   section('Runtime files present');

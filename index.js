@@ -137,6 +137,27 @@ export function apply(ctx, config) {
       todos,
       dueReminders: dueReminders(todos, now),
       ai: ai.available(),
+      memory: store.memory(),
+    }
+  }
+
+  /**
+   * Compact memory context handed to the AI layer: the user's facts, the derived statistics,
+   * the postponement counts and the last advice per note. The layer caps every length again,
+   * so a large board or a long fact list cannot bloat a prompt.
+   * @returns {{ facts: string[], stats: Record<string, any>, postpones: Record<string, number>, lastAdvice: Record<string, string> }} the context.
+   */
+  function memoryContext() {
+    /** @type {Record<string, string>} */
+    const lastAdvice = {}
+    for (const [threadId, thread] of Object.entries(store.threads())) {
+      if (thread && thread.advice && typeof thread.advice.text === 'string') lastAdvice[threadId] = thread.advice.text
+    }
+    return {
+      facts: store.facts().map((fact) => fact.text).slice(0, 20),
+      stats: store.stats(),
+      postpones: store.postpones(),
+      lastAdvice,
     }
   }
 
@@ -163,24 +184,50 @@ export function apply(ctx, config) {
       case 'ackReminders':
         return store.ackReminders(payload.ids)
       case 'aiPlan': {
-        const plan = await ai.plan(store.all())
+        const plan = await ai.plan(store.all(), memoryContext())
         const todos = await store.applyPlan(plan.items)
         return { plan, todos }
       }
       case 'aiAdvice':
-        return { advice: await ai.advice(store.all()) }
+        return { advice: await ai.advice(store.all(), memoryContext()) }
       case 'aiTag': {
-        const tagResult = await ai.tag(store.all())
+        const tagResult = await ai.tag(store.all(), memoryContext())
         const todos = await store.applyTags(tagResult.items)
         return { tagResult, todos }
       }
       case 'aiNoteAdvice': {
         const todo = id === '' ? undefined : store.get(id)
         if (!todo) throw new InputError('not_found', `no todo with id ${id}`)
-        return ai.noteAdvice(todo, noteAdviceHistory(payload.history))
+        const history = noteAdviceHistory(payload.history)
+        const result = await ai.noteAdvice(todo, history, memoryContext())
+        // Persist the thread so the coach resumes instead of starting over. The write is
+        // best-effort: a full disk must never turn a usable suggestion into an error.
+        const advice = result && result.kind === 'advice' && result.advice
+          ? { text: result.advice.text, source: result.advice.source }
+          : null
+        try {
+          await store.saveThread(id, history, advice)
+        } catch (error) {
+          options.logger(`sticker-todo: could not store the advice thread for ${id} (${error.message})`)
+        }
+        return result
       }
       case 'aiClearPlan':
         return { todos: await store.clearPlan() }
+      case 'remember':
+        return store.addFact(payload.text)
+      case 'updateFact':
+        return store.updateFact(id, payload.text)
+      case 'forget':
+        return store.forgetFact(id)
+      case 'review':
+        return {
+          review: await ai.review({ todos: store.all(), events: store.events(), facts: store.facts(), now: new Date() }),
+        }
+      case 'memoryCandidates':
+        return ai.memoryCandidates({ todos: store.all(), events: store.events(), facts: store.facts(), now: new Date() })
+      case 'clearMemory':
+        return { cleared: await store.clearMemory() }
       default:
         throw new InputError('unknown_action', `unknown action: ${String(action)}`)
     }
