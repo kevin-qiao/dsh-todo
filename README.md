@@ -1,6 +1,6 @@
 # 便利贴待办 · Sticker TODO
 
-![version](https://img.shields.io/badge/version-1.8.0-4d6bfe)
+![version](https://img.shields.io/badge/version-1.8.1-4d6bfe)
 [![npm](https://img.shields.io/npm/v/dsh-sticker-todo)](https://www.npmjs.com/package/dsh-sticker-todo)
 [![verify](https://github.com/kevin-qiao/dsh-todo/actions/workflows/verify.yml/badge.svg)](https://github.com/kevin-qiao/dsh-todo/actions/workflows/verify.yml)
 ![i18n](https://img.shields.io/badge/i18n-zh%20%7C%20en-2f9e44)

@@ -1,7 +1,8 @@
 # 便利贴待办 · Sticker TODO — 维护者交接
 
 本仓库就是插件包 **`dsh-sticker-todo`** 的根目录（v1.6.0 起从 `@local/dsh-sticker-todo` 改名并发布到
-npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前版本 **1.8.0**，已发布到 npm（`latest = 1.8.0`）。
+npm；仓库与市场仍用 `dsh-to-do` 这个仓库名）。当前版本 **1.8.1**（扁平化标签样式，待发布）；
+npm 上 `latest = 1.8.0`。
 
 ## 发布到 npm
 

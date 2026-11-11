@@ -6,6 +6,17 @@ All notable changes to this plugin are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.8.1] — 2026-11-11
+
+### Changed
+- **Flatter chips.** The little chips are now flat instead of pill-shaped: no border, no shadow, a
+  4–5 px radius, one flat tint per state, and a background / text-colour-only hover (the old
+  `translateY(-1px)` lift is gone). Covers the note tags (`#tag`), the tag filter row and its
+  `全部` / `分组` chips, the due / reminder / plan / postpone chips on cards, the minimal-list due
+  chip and the tag chips inside an expanded list row. Chrome and text still use `--dsw-alias-*`
+  tokens, so light and dark themes stay correct.
+- Styling-only release: no API, storage, behaviour or dependency change.
+
 ## [1.8.0] — 2026-11-06
 
 ### Fixed

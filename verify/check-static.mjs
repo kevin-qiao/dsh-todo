@@ -279,10 +279,10 @@ function checkManifest() {
   if (typeof pkg.version === 'string' && /^\d+\.\d+\.\d+/.test(pkg.version)) pass('version', pkg.version);
   else fail('version', `expected a semver string, got ${JSON.stringify(pkg.version)}`);
 
-  // v1.8.0 is the handoff release; the version is asserted exactly so docs and
+  // v1.8.1 is the flat-chip styling release; the version is asserted exactly so docs and
   // CHANGELOG entries cannot drift from the manifest.
-  if (pkg.version === '1.8.0') pass('version is 1.8.0 (handoff release)');
-  else fail('version is 1.8.0 (handoff release)', `expected "1.8.0", got ${JSON.stringify(pkg.version)}`);
+  if (pkg.version === '1.8.1') pass('version is 1.8.1 (flat chips)');
+  else fail('version is 1.8.1 (flat chips)', `expected "1.8.1", got ${JSON.stringify(pkg.version)}`);
 
   // The plugin must stay dependency-free: everything runs on Node built-ins.
   const dependencyFields = ['dependencies', 'peerDependencies', 'optionalDependencies'];
